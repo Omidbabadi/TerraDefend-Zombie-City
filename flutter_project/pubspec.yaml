@@ -1,5 +1,5 @@
 name: sector_zero_city_defense
-description: Clean Architecture Flutter real-time tactical city map zombie defense with Google Maps, offline Hive caching, and virtual currency store.
+description: Clean Architecture Flutter real-time tactical city map zombie defense with OpenStreetMap (flutter_map), OSRM real-road routing, offline Hive caching, and virtual currency store.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,7 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  google_maps_flutter: ^2.9.0
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
   flutter_bloc: ^8.1.6
   equatable: ^2.0.5
   get_it: ^7.7.0

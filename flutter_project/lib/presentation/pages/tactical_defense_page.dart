@@ -1,11 +1,9 @@
-// Source: Google Maps Platform Code Assist & Sector Zero Clean Architecture Presentation
-import 'dart:async';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
+// Sector Zero Clean Architecture Presentation — OpenStreetMap (flutter_map) + CustomPaint
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../domain/entities/defense_entities.dart';
 import '../bloc/tactical_defense_cubit.dart';
 import '../widgets/store_bottom_sheet.dart';
@@ -20,7 +18,7 @@ class TacticalDefensePage extends StatefulWidget {
 
 class _TacticalDefensePageState extends State<TacticalDefensePage>
     with SingleTickerProviderStateMixin {
-  final Completer<GoogleMapController> _mapCompleter = Completer();
+  final MapController _mapController = MapController();
   late final Ticker _simulationTicker;
   Duration _lastElapsed = Duration.zero;
 
@@ -39,28 +37,49 @@ class _TacticalDefensePageState extends State<TacticalDefensePage>
   @override
   void dispose() {
     _simulationTicker.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
-  Set<Marker> _buildMarkers(TacticalDefenseState state) {
-    final markers = <Marker>{};
+  List<Marker> _buildMarkers(TacticalDefenseState state) {
+    final markers = <Marker>[];
     final sector = state.activeSector;
     if (sector != null) {
       markers.add(
         Marker(
-          markerId: const MarkerId('hq_command_bunker'),
-          position: LatLng(sector.latitude, sector.longitude),
-          infoWindow: const InfoWindow(title: 'HQ Command Bunker'),
+          point: LatLng(sector.latitude, sector.longitude),
+          width: 120,
+          height: 36,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Center(
+              child: Text(
+                'HQ BUNKER',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF090D16),
+                ),
+              ),
+            ),
+          ),
         ),
       );
     }
     for (final tower in state.towers) {
       markers.add(
         Marker(
-          markerId: MarkerId(tower.id),
-          position: LatLng(tower.latitude, tower.longitude),
-          infoWindow: InfoWindow(
-            title: '${tower.type.name} (LVL ${tower.level})',
+          point: LatLng(tower.latitude, tower.longitude),
+          width: 28,
+          height: 28,
+          child: const Icon(
+            Icons.shield,
+            color: Color(0xFF38BDF8),
+            size: 20,
           ),
         ),
       );
@@ -68,8 +87,8 @@ class _TacticalDefensePageState extends State<TacticalDefensePage>
     return markers;
   }
 
-  Set<Polyline> _buildRealRoadPolylines(TacticalDefenseState state) {
-    final polylines = <Polyline>{};
+  List<Polyline> _buildRealRoadPolylines(TacticalDefenseState state) {
+    final polylines = <Polyline>[];
     final sector = state.activeSector;
     if (sector == null) return polylines;
 
@@ -81,10 +100,9 @@ class _TacticalDefensePageState extends State<TacticalDefensePage>
       if (gpsPoints.length >= 2) {
         polylines.add(
           Polyline(
-            polylineId: PolylineId('road_${corridor.id}'),
             points: gpsPoints,
             color: const Color(0xCCEF4444),
-            width: 5,
+            strokeWidth: 5.0,
           ),
         );
       }
@@ -110,36 +128,38 @@ class _TacticalDefensePageState extends State<TacticalDefensePage>
             builder: (context, constraints) {
               return Stack(
                 children: [
-                  // 1. Real-World Google Map Layer with Real Road Polylines
+                  // 1. Free OpenStreetMap Layer (`flutter_map`) with Real OSRM Road Polylines
                   if (!state.isOfflineVectorMode)
-                    GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: LatLng(
+                    FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: LatLng(
                           activeSector.latitude,
                           activeSector.longitude,
                         ),
-                        zoom: activeSector.zoom,
+                        initialZoom: activeSector.zoom,
+                        onTap: (tapPosition, latLng) {
+                          cubit.deployOnMapCoordinate(
+                            normX: 0.55,
+                            normY: 0.45,
+                            latitude: latLng.latitude,
+                            longitude: latLng.longitude,
+                          );
+                        },
                       ),
-                      onMapCreated: (controller) {
-                        if (!_mapCompleter.isCompleted) {
-                          _mapCompleter.complete(controller);
-                        }
-                      },
-                      markers: _buildMarkers(state),
-                      polylines: _buildRealRoadPolylines(state),
-                      onTap: (latLng) {
-                        cubit.deployOnMapCoordinate(
-                          normX: 0.55,
-                          normY: 0.45,
-                          latitude: latLng.latitude,
-                          longitude: latLng.longitude,
-                        );
-                      },
-                      gestureRecognizers: {
-                        Factory<OneSequenceGestureRecognizer>(
-                          () => EagerGestureRecognizer(),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.sectorzero.citydefense',
                         ),
-                      },
+                        PolylineLayer(
+                          polylines: _buildRealRoadPolylines(state),
+                        ),
+                        MarkerLayer(
+                          markers: _buildMarkers(state),
+                        ),
+                      ],
                     ),
 
                   // 2. Real-Time Tactical CustomPaint Overlay
@@ -154,8 +174,10 @@ class _TacticalDefensePageState extends State<TacticalDefensePage>
                         cubit.deployOnMapCoordinate(
                           normX: normX,
                           normY: normY,
-                          latitude: activeSector.latitude + (0.5 - normY) * 0.004,
-                          longitude: activeSector.longitude + (normX - 0.5) * 0.004,
+                          latitude:
+                              activeSector.latitude + (0.5 - normY) * 0.004,
+                          longitude:
+                              activeSector.longitude + (normX - 0.5) * 0.004,
                         );
                       },
                       child: CustomPaint(
@@ -211,7 +233,7 @@ class _TacticalDefensePageState extends State<TacticalDefensePage>
                                 child: Text(
                                   state.isOfflineVectorMode
                                       ? 'Offline Vector: ON'
-                                      : 'Live Google Map',
+                                      : 'Live OpenStreetMap',
                                 ),
                               ),
                               const SizedBox(width: 8),

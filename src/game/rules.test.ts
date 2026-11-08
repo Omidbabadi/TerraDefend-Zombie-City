@@ -4,65 +4,180 @@ import {
   INITIAL_UPGRADES,
   PRESET_CITY_SECTORS,
   buildProceduralSectorFromCoords,
+  calculateMapControlPercentage,
   calculateUpgradeCost,
   canAffordDeployable,
   convertLatLngPathToSectorRoad,
+  create360ZombieSpawnPoint,
+  createInitialFortressZones,
   createZombieWaveComposition,
   getDynamicDeployCost,
   getEffectiveTowerStats,
+  getHqDefenseWeaponStats,
   getMaxBaseHp,
   getMaxTowerSlots,
+  getScrapCollectorYieldPerSecond,
   getScrapRewardWithBonus,
+  isPointInsideCapturedZone,
   projectLatLngToSectorPoint,
+  stepFortressZoneCaptureAndFall,
   unprojectSectorPointToLatLng,
   validateTowerPlacement,
 } from './rules';
 
-test('getDynamicDeployCost and canAffordDeployable scale progressively with active unit count', () => {
+test('getDynamicDeployCost and canAffordDeployable return flat costs without price escalation', () => {
   const cost0 = getDynamicDeployCost('rotary_turret', 0);
   const cost1 = getDynamicDeployCost('rotary_turret', 1);
-  const cost2 = getDynamicDeployCost('rotary_turret', 2);
-  assert.equal(cost0, 115);
-  assert.equal(cost1 > cost0, true);
-  assert.equal(cost2 > cost1, true);
+  const cost5 = getDynamicDeployCost('rotary_turret', 5);
+  assert.equal(cost0, 100);
+  assert.equal(cost1, 100);
+  assert.equal(cost5, 100);
 
-  assert.equal(canAffordDeployable(115, 'rotary_turret', 0), true);
-  assert.equal(canAffordDeployable(115, 'rotary_turret', 1), false);
+  // Verify Heavy Fortress, Scrap Refinery, Barracks, Vehicle Factory, and Forward HQ flat costs
+  assert.equal(getDynamicDeployCost('fortress', 0), 190);
+  assert.equal(getDynamicDeployCost('fortress', 3), 190);
+  assert.equal(getDynamicDeployCost('scrap_collector', 0), 120);
+  assert.equal(getDynamicDeployCost('scrap_collector', 3), 120);
+  assert.equal(getDynamicDeployCost('infantry_barracks', 0), 150);
+  assert.equal(getDynamicDeployCost('infantry_barracks', 2), 150);
+  assert.equal(getDynamicDeployCost('vehicle_factory', 0), 210);
+  assert.equal(getDynamicDeployCost('vehicle_factory', 2), 210);
+  assert.equal(getDynamicDeployCost('forward_hq', 0), 260);
+  assert.equal(getDynamicDeployCost('forward_hq', 2), 260);
+
+  assert.equal(canAffordDeployable(100, 'rotary_turret', 0), true);
+  assert.equal(canAffordDeployable(100, 'rotary_turret', 4), true);
+  assert.equal(canAffordDeployable(99, 'rotary_turret', 1), false);
   assert.equal(canAffordDeployable(225, 'airstrike', 0), true);
 });
 
-test('validateTowerPlacement blocks street asphalt, HQ perimeter, tower stacking, and grid overflow', () => {
+test('validateTowerPlacement enforces Player-Controlled Area, street asphalt, HQ perimeter, stacking, and grid cap', () => {
   const sector = PRESET_CITY_SECTORS[0];
-  const maxSlots = getMaxTowerSlots(INITIAL_UPGRADES);
-  assert.equal(maxSlots, 6);
+  const zones = createInitialFortressZones(sector);
+  const maxSlots = getMaxTowerSlots(INITIAL_UPGRADES, 1);
+  assert.equal(maxSlots, 8);
+  assert.equal(getMaxTowerSlots(INITIAL_UPGRADES, 3), 14);
 
   // 1. Cannot build on HQ perimeter (0.5, 0.5)
-  const onHq = validateTowerPlacement(0.5, 0.5, sector, [], maxSlots);
+  const onHq = validateTowerPlacement(0.5, 0.5, sector, [], maxSlots, zones);
   assert.equal(onHq.valid, false);
 
-  // 2. Cannot build directly on a road waypoint/segment
-  const roadPt = sector.roads[0].points[1];
-  const onRoad = validateTowerPlacement(roadPt.x, roadPt.y, sector, [], maxSlots);
+  // 2. Cannot build in Zombie-Controlled Area without Forward HQ or nearby Soldiers/Vehicles
+  const outsideZone = validateTowerPlacement(0.18, 0.18, sector, [], maxSlots, zones);
+  assert.equal(outsideZone.valid, false);
+  assert.equal(outsideZone.reason?.includes('OUTSIDE PLAYER AREA'), true);
+
+  // 2b. When a Soldier or Heavy Vehicle moves to (0.18, 0.18), the player CAN build a Forward HQ Base there!
+  const withUnitVanguard = validateTowerPlacement(
+    0.18,
+    0.18,
+    sector,
+    [],
+    maxSlots,
+    undefined,
+    [{ x: 0.19, y: 0.19 }],
+    'forward_hq'
+  );
+  assert.equal(withUnitVanguard.valid, true);
+
+  // 3. Cannot build directly on a road waypoint/segment inside the HQ zone
+  const roadPt = sector.roads[0].points[3]; // near (0.5, 0.45) inside HQ zone
+  const onRoad = validateTowerPlacement(roadPt.x, roadPt.y, sector, [], maxSlots, zones);
   assert.equal(onRoad.valid, false);
   assert.equal(onRoad.reason?.includes('ASPHALT'), true);
 
-  // 3. Valid rooftop/curb position on an urban block away from roads and HQ
-  const clearSite = validateTowerPlacement(0.74, 0.72, sector, [], maxSlots);
+  // 4. Valid rooftop/curb position inside the captured Central HQ zone away from roads
+  const clearSite = validateTowerPlacement(0.59, 0.59, sector, [], maxSlots, zones);
   assert.equal(clearSite.valid, true);
 
-  // 4. Cannot stack another tower on the same spot
-  const stacked = validateTowerPlacement(0.75, 0.72, sector, [{ x: 0.74, y: 0.72 }], maxSlots);
+  // 5. Cannot stack another tower on the same spot
+  const stacked = validateTowerPlacement(0.60, 0.59, sector, [{ x: 0.59, y: 0.59 }], maxSlots, zones);
   assert.equal(stacked.valid, false);
-  assert.equal(stacked.reason?.includes('TOWER'), true);
+  assert.equal(stacked.reason?.includes('BUILDING'), true);
 
-  // 5. Cannot exceed Power Grid cap
+  // 6. Cannot exceed Power Grid cap
   const fullGrid = Array.from({ length: maxSlots }, (_, i) => ({
-    x: 0.1 + i * 0.1,
-    y: 0.15,
+    x: 0.35 + i * 0.03,
+    y: 0.38,
   }));
-  const overflow = validateTowerPlacement(0.8, 0.8, sector, fullGrid, maxSlots);
+  const overflow = validateTowerPlacement(0.59, 0.59, sector, fullGrid, maxSlots, zones);
   assert.equal(overflow.valid, false);
   assert.equal(overflow.reason?.includes('GRID FULL'), true);
+});
+
+test('Whole-map Player vs. Zombie territory calculation and 360-degree zombie spawning', () => {
+  const sector = PRESET_CITY_SECTORS[0];
+  const initialCtrl = calculateMapControlPercentage([], true);
+  assert.equal(initialCtrl.hqCount, 1);
+  assert.equal(initialCtrl.playerPercent > 20 && initialCtrl.playerPercent < 50, true);
+  assert.equal(initialCtrl.playerPercent + initialCtrl.zombiePercent, 100);
+
+  // Building Forward HQs and Heavy Fortresses across the 4 quadrants expands Player-Controlled Area to 100%
+  const expandedCtrl = calculateMapControlPercentage(
+    [
+      { blueprintId: 'forward_hq', x: 0.25, y: 0.25, level: 2, controlRadius: 0.30 },
+      { blueprintId: 'forward_hq', x: 0.75, y: 0.25, level: 2, controlRadius: 0.30 },
+      { blueprintId: 'forward_hq', x: 0.75, y: 0.75, level: 2, controlRadius: 0.30 },
+      { blueprintId: 'forward_hq', x: 0.25, y: 0.75, level: 2, controlRadius: 0.30 },
+      { blueprintId: 'fortress', x: 0.50, y: 0.20, level: 1, controlRadius: 0.16 },
+    ],
+    true
+  );
+  assert.equal(expandedCtrl.hqCount, 5);
+  assert.equal(expandedCtrl.playerPercent, 100);
+  assert.equal(expandedCtrl.zombiePercent, 0);
+
+  // Verify 360° zombie spawns come from all 4 compass quadrants around the map perimeter
+  const spawns = Array.from({ length: 16 }, (_, i) =>
+    create360ZombieSpawnPoint(i, 16, sector)
+  );
+  assert.equal(spawns.some((s) => s.x < 0.3 && s.y < 0.3), true);
+  assert.equal(spawns.some((s) => s.x > 0.7 && s.y < 0.3), true);
+  assert.equal(spawns.some((s) => s.x > 0.7 && s.y > 0.7), true);
+  assert.equal(spawns.some((s) => s.x < 0.3 && s.y > 0.7), true);
+});
+
+test('FortressZone capture by soldiers/vehicles and Zone Fall when zombies eliminate defenders', () => {
+  const sector = PRESET_CITY_SECTORS[0];
+  const zones = createInitialFortressZones(sector);
+  assert.equal(zones.length, 5);
+  assert.equal(zones[0].isHq, true);
+  assert.equal(zones[0].status, 'captured');
+
+  const nwFortress = zones[1];
+  assert.equal(nwFortress.status, 'hostile');
+  assert.equal(isPointInsideCapturedZone(nwFortress.x, nwFortress.y, zones), false);
+
+  // Step 1: Soldiers & Heavy Vehicles enter NW Fortress uncontested and capture it
+  let current = nwFortress;
+  let capturedEvent = false;
+  for (let i = 0; i < 10; i++) {
+    const res = stepFortressZoneCaptureAndFall(current, 3, 0, 1.0);
+    current = res.updatedZone;
+    if (res.justCaptured) capturedEvent = true;
+  }
+  assert.equal(capturedEvent, true);
+  assert.equal(current.status, 'captured');
+  assert.equal(current.captureProgress, 1);
+
+  const updatedZones = zones.map((z) => (z.id === current.id ? current : z));
+  assert.equal(isPointInsideCapturedZone(nwFortress.x, nwFortress.y, updatedZones), true);
+
+  // Step 2: Zombies eliminate defending soldiers (friendlyUnitsInZone = 0, zombiesInZone = 4) -> Zone Falls!
+  let fellEvent = false;
+  for (let i = 0; i < 10; i++) {
+    const res = stepFortressZoneCaptureAndFall(current, 0, 4, 0.5);
+    current = res.updatedZone;
+    if (res.justFell) fellEvent = true;
+  }
+  assert.equal(fellEvent, true);
+  assert.equal(current.status, 'hostile');
+  assert.equal(current.captureProgress, 0);
+
+  // Step 3: Verify Scrap Refinery economy yield scales with building level and salvage scanner
+  assert.equal(getScrapCollectorYieldPerSecond(1, INITIAL_UPGRADES), 5);
+  assert.equal(getScrapCollectorYieldPerSecond(3, INITIAL_UPGRADES) > 5, true);
+  assert.equal(getHqDefenseWeaponStats(INITIAL_UPGRADES).damage, 24);
 });
 
 test('calculateUpgradeCost scales exponentially with level', () => {

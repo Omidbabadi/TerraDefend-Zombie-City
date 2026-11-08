@@ -16,7 +16,6 @@ abstract class LocalOfflineCacheDataSource {
     required String city,
     required double latitude,
     required double longitude,
-    String? googleMapsApiKey,
   });
 }
 
@@ -237,84 +236,56 @@ class HiveOfflineCacheDataSourceImpl implements LocalOfflineCacheDataSource {
     required String city,
     required double latitude,
     required double longitude,
-    String? googleMapsApiKey,
   }) async {
     final corridors = <CachedRoadCorridor>[];
 
-    // If an API key is supplied on native mobile, query Google Maps Routes API v2
-    // (`https://routes.googleapis.com/directions/v2:computeRoutes`) to trace real streets
-    if (googleMapsApiKey != null && googleMapsApiKey.isNotEmpty) {
-      final offsets = [
-        {'id': 'nw', 'name': 'NW Real Street', 'dLat': 0.0042, 'dLng': -0.0048},
-        {'id': 'ne', 'name': 'NE Real Street', 'dLat': 0.0038, 'dLng': 0.0052},
-        {'id': 'se', 'name': 'SE Real Street', 'dLat': -0.0042, 'dLng': 0.0045},
-        {'id': 'sw', 'name': 'SW Real Street', 'dLat': -0.0038, 'dLng': -0.0050},
-      ];
+    // Query free OpenStreetMap OSRM router (`https://router.project-osrm.org`)
+    // to trace real streets from 4 perimeter origins into HQ without any API key
+    final offsets = [
+      {'id': 'nw', 'name': 'NW Real Street (OSM)', 'dLat': 0.0042, 'dLng': -0.0048},
+      {'id': 'ne', 'name': 'NE Real Street (OSM)', 'dLat': 0.0038, 'dLng': 0.0052},
+      {'id': 'se', 'name': 'SE Real Street (OSM)', 'dLat': -0.0042, 'dLng': 0.0045},
+      {'id': 'sw', 'name': 'SW Real Street (OSM)', 'dLat': -0.0038, 'dLng': -0.0050},
+    ];
 
-      for (final off in offsets) {
-        try {
-          final uri = Uri.parse(
-            'https://routes.googleapis.com/directions/v2:computeRoutes',
-          );
-          final response = await http.post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Goog-Api-Key': googleMapsApiKey,
-              'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
-            },
-            body: jsonEncode({
-              'origin': {
-                'location': {
-                  'latLng': {
-                    'latitude': latitude + (off['dLat'] as double),
-                    'longitude': longitude + (off['dLng'] as double),
-                  },
-                },
-              },
-              'destination': {
-                'location': {
-                  'latLng': {
-                    'latitude': latitude,
-                    'longitude': longitude,
-                  },
-                },
-              },
-              'travelMode': 'DRIVE',
-            }),
-          );
+    for (final off in offsets) {
+      try {
+        final origLat = latitude + (off['dLat'] as double);
+        final origLng = longitude + (off['dLng'] as double);
+        final uri = Uri.parse(
+          'https://router.project-osrm.org/route/v1/foot/$origLng,$origLat;$longitude,$latitude?overview=full&geometries=polyline',
+        );
+        final response = await http.get(uri);
 
-          if (response.statusCode == 200) {
-            final data = jsonDecode(response.body) as Map<String, dynamic>;
-            final routes = data['routes'] as List<dynamic>?;
-            final encoded = routes?.firstOrNull?['polyline']?['encodedPolyline']
-                as String?;
-            if (encoded != null && encoded.isNotEmpty) {
-              final decodedPairs = decodeGoogleEncodedPolyline(encoded);
-              final waypoints = decodedPairs
-                  .map(
-                    (pair) => projectLatLngToSector(
-                      pair[0],
-                      pair[1],
-                      latitude,
-                      longitude,
-                    ),
-                  )
-                  .toList();
-              if (waypoints.length >= 2) {
-                corridors.add(
-                  CachedRoadCorridor(
-                    id: off['id'] as String,
-                    name: off['name'] as String,
-                    waypoints: waypoints,
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final routes = data['routes'] as List<dynamic>?;
+          final encoded = routes?.firstOrNull?['geometry'] as String?;
+          if (encoded != null && encoded.isNotEmpty) {
+            final decodedPairs = decodeGoogleEncodedPolyline(encoded);
+            final waypoints = decodedPairs
+                .map(
+                  (pair) => projectLatLngToSector(
+                    pair[0],
+                    pair[1],
+                    latitude,
+                    longitude,
                   ),
-                );
-              }
+                )
+                .toList();
+            if (waypoints.length >= 2) {
+              corridors.add(
+                CachedRoadCorridor(
+                  id: off['id'] as String,
+                  name: off['name'] as String,
+                  waypoints: waypoints,
+                ),
+              );
             }
           }
-        } catch (_) {
-          // Fallback to deterministic street grid below if offline
         }
+      } catch (_) {
+        // Fallback to deterministic street grid below if offline
       }
     }
 
@@ -381,7 +352,7 @@ class HiveOfflineCacheDataSourceImpl implements LocalOfflineCacheDataSource {
       longitude: longitude,
       cachedTimestampMs: DateTime.now().millisecondsSinceEpoch,
       tilePackageSizeKb: 4200,
-      threatRating: 'GOOGLE ROUTES API · REAL STREET GEOMETRY',
+      threatRating: 'OSRM OPENSTREETMAP · REAL STREET GEOMETRY',
       corridors: corridors,
     );
   }

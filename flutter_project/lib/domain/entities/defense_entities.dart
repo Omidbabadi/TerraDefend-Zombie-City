@@ -1,16 +1,80 @@
 import 'package:equatable/equatable.dart';
 
-enum DeployableCategory { tower, troop, orbitalAbility }
+enum DeployableCategory {
+  tower,
+  fortress,
+  economy,
+  barracks,
+  vehicleFactory,
+  forwardHq,
+  orbitalAbility,
+  unitCommand,
+}
 
 enum DeployableType {
   rotaryTurret,
   railSniperNest,
   cryoEmpPylon,
+  heavyFortress,
+  scrapRefinery,
+  infantryBarracks,
+  heavyVehicleFactory,
+  forwardHqBase,
   mobileStrikeSquad,
   orbitalNapalmStrike,
 }
 
 enum ZombieArchetype { walker, runner, spitter, juggernaut }
+
+class FortressZoneEntity extends Equatable {
+  final String id;
+  final String name;
+  final double normX;
+  final double normY;
+  final double radius;
+  final bool isHq;
+  final bool isCaptured;
+  final double captureProgress;
+
+  const FortressZoneEntity({
+    required this.id,
+    required this.name,
+    required this.normX,
+    required this.normY,
+    this.radius = 0.28,
+    this.isHq = false,
+    this.isCaptured = false,
+    this.captureProgress = 0.0,
+  });
+
+  FortressZoneEntity copyWith({
+    bool? isCaptured,
+    double? captureProgress,
+  }) {
+    return FortressZoneEntity(
+      id: id,
+      name: name,
+      normX: normX,
+      normY: normY,
+      radius: radius,
+      isHq: isHq,
+      isCaptured: isCaptured ?? this.isCaptured,
+      captureProgress: captureProgress ?? this.captureProgress,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        id,
+        name,
+        normX,
+        normY,
+        radius,
+        isHq,
+        isCaptured,
+        captureProgress,
+      ];
+}
 
 class DefenseTowerEntity extends Equatable {
   final String id;
@@ -48,13 +112,23 @@ class DefenseTowerEntity extends Equatable {
       case DeployableType.rotaryTurret:
         return 100;
       case DeployableType.railSniperNest:
-        return 165;
+        return 160;
       case DeployableType.cryoEmpPylon:
-        return 140;
+        return 145;
+      case DeployableType.heavyFortress:
+        return 190;
+      case DeployableType.scrapRefinery:
+        return 120;
+      case DeployableType.infantryBarracks:
+        return 150;
+      case DeployableType.heavyVehicleFactory:
+        return 210;
+      case DeployableType.forwardHqBase:
+        return 260;
       case DeployableType.mobileStrikeSquad:
         return 125;
       case DeployableType.orbitalNapalmStrike:
-        return 200;
+        return 225;
     }
   }
 

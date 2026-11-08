@@ -30,7 +30,7 @@ export const FLUTTER_CLEAN_ARCH_FILES: FlutterArchFile[] = [
   {
     path: 'flutter_project/pubspec.yaml',
     layer: 'Root & DI',
-    description: 'Flutter project manifest with google_maps_flutter, flutter_bloc, get_it, equatable, and hive_flutter.',
+    description: 'Flutter project manifest with flutter_map (OpenStreetMap), latlong2, flutter_bloc, get_it, equatable, and hive_flutter.',
     content: pubspecYaml,
   },
   {
@@ -132,7 +132,7 @@ export const FLUTTER_CLEAN_ARCH_FILES: FlutterArchFile[] = [
   {
     path: 'flutter_project/lib/presentation/pages/tactical_defense_page.dart',
     layer: 'Presentation',
-    description: 'Main Flutter screen combining GoogleMap widget, CustomPaint tactical overlay, and deployment dock.',
+    description: 'Main Flutter screen combining FlutterMap (OpenStreetMap), CustomPaint tactical overlay, and deployment dock.',
     content: tacticalDefensePageDart,
   },
   {

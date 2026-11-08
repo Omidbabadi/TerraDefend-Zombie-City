@@ -56,7 +56,7 @@ export const FlutterCodeModal: React.FC<FlutterCodeModalProps> = ({
               Flutter Clean Architecture Source Code (`flutter_project/lib/`)
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              20 modular Dart & YAML files structured across Core, Domain (Entities, Repositories, UseCases), Data (Models, Hive DataSources, Repositories), and Presentation (BLoC/Cubit, GoogleMap + CustomPaint).
+              20 modular Dart &amp; YAML files structured across Core, Domain (Entities, Repositories, UseCases), Data (Models, Hive DataSources, Repositories), and Presentation (BLoC/Cubit, FlutterMap OpenStreetMap + CustomPaint).
             </p>
           </div>
           <button

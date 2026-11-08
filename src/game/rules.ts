@@ -3,6 +3,7 @@ import {
   CitySector,
   DeployableBlueprint,
   DeployableId,
+  FortressZone,
   PlacementValidationResult,
   StorePack,
   UpgradeStat,
@@ -14,61 +15,128 @@ export const DEPLOYABLE_BLUEPRINTS: Record<DeployableId, DeployableBlueprint> = 
     id: 'rotary_turret',
     name: 'Rotary Turret',
     keyBinding: '1',
-    roleClue: 'Curbside Point Defense',
+    roleClue: 'Rapid Point-Defense Tower',
     category: 'tower',
-    baseCost: 115,
-    range: 135,
-    damage: 15,
-    fireRate: 3.1,
+    baseCost: 100,
+    range: 140,
+    damage: 16,
+    fireRate: 3.2,
     color: '#38bdf8',
   },
   sniper_nest: {
     id: 'sniper_nest',
-    name: 'Rail Sniper Nest',
+    name: 'Rail Sniper Tower',
     keyBinding: '2',
-    roleClue: 'Rooftop Armor Piercer',
+    roleClue: 'Long-Range Armor Piercer',
     category: 'tower',
-    baseCost: 185,
-    range: 245,
-    damage: 78,
-    fireRate: 0.68,
+    baseCost: 160,
+    range: 250,
+    damage: 82,
+    fireRate: 0.72,
     color: '#f59e0b',
   },
   emp_pylon: {
     id: 'emp_pylon',
-    name: 'Cryo EMP Pylon',
+    name: 'Cryo EMP Tower',
     keyBinding: '3',
     roleClue: 'Area Crowd Slow & Shock',
     category: 'tower',
-    baseCost: 160,
-    range: 118,
-    damage: 12,
-    fireRate: 1.15,
+    baseCost: 145,
+    range: 122,
+    damage: 14,
+    fireRate: 1.2,
     color: '#a855f7',
   },
-  rifle_squad: {
-    id: 'rifle_squad',
-    name: 'Mobile Strike Squad',
+  fortress: {
+    id: 'fortress',
+    name: 'Heavy Fortress',
     keyBinding: '4',
-    roleClue: 'Street Intercept & Guard',
-    category: 'troop',
-    baseCost: 140,
-    range: 125,
-    damage: 14,
-    fireRate: 2.5,
+    roleClue: 'Armored Bastion · Dual Cannons (680 HP)',
+    category: 'fortress',
+    baseCost: 190,
+    range: 195,
+    damage: 38,
+    fireRate: 2.8,
+    color: '#fb923c',
+    controlRadius: 0.16,
+  },
+  scrap_collector: {
+    id: 'scrap_collector',
+    name: 'Scrap Refinery',
+    keyBinding: '5',
+    roleClue: 'Economy: +5 Scrap/sec Income',
+    category: 'economy',
+    baseCost: 120,
+    range: 70,
+    damage: 0,
+    fireRate: 0.5,
+    color: '#eab308',
+    scrapPerSecond: 5,
+  },
+  infantry_barracks: {
+    id: 'infantry_barracks',
+    name: 'Infantry Barracks',
+    keyBinding: '6',
+    roleClue: 'Trains Controllable Soldier Squads',
+    category: 'producer',
+    baseCost: 150,
+    range: 95,
+    damage: 15,
+    fireRate: 2.6,
     color: '#10b981',
+    spawnIntervalSeconds: 7.0,
+    spawnUnitType: 'soldier',
+  },
+  vehicle_factory: {
+    id: 'vehicle_factory',
+    name: 'Heavy Vehicle Factory',
+    keyBinding: '7',
+    roleClue: 'Produces Controllable Siege Tanks',
+    category: 'producer',
+    baseCost: 210,
+    range: 145,
+    damage: 52,
+    fireRate: 1.1,
+    color: '#06b6d4',
+    spawnIntervalSeconds: 10.5,
+    spawnUnitType: 'heavy_vehicle',
+  },
+  forward_hq: {
+    id: 'forward_hq',
+    name: 'Forward HQ Base',
+    keyBinding: '8',
+    roleClue: 'Expands Player Map Area + HQ Cannon',
+    category: 'hq',
+    baseCost: 260,
+    range: 175,
+    damage: 26,
+    fireRate: 2.4,
+    color: '#22c55e',
+    controlRadius: 0.30,
   },
   airstrike: {
     id: 'airstrike',
     name: 'Orbital Napalm Strike',
-    keyBinding: '5',
+    keyBinding: '9',
     roleClue: 'Heavy Area Bombardment',
     category: 'ability',
     baseCost: 225,
-    range: 105,
-    damage: 240,
+    range: 110,
+    damage: 250,
     fireRate: 1,
     color: '#ef4444',
+  },
+  unit_command: {
+    id: 'unit_command',
+    name: 'Command Army',
+    keyBinding: 'M',
+    roleClue: 'Click Map to Move Soldiers & Vehicles',
+    category: 'command',
+    baseCost: 0,
+    range: 0,
+    damage: 0,
+    fireRate: 0,
+    color: '#34d399',
   },
 };
 
@@ -76,24 +144,25 @@ export const INITIAL_UPGRADES: UpgradeStat[] = [
   {
     id: 'turret_damage',
     name: 'Tungsten Core Rounds',
-    description: 'Increases all deployed tower ballistic & rail damage.',
+    description: 'Increases all deployed tower & heavy tank ballistic damage.',
     level: 1,
     maxLevel: 10,
     baseCostGems: 50,
     baseCostScrap: 150,
     bonusPerLevel: 0.15,
-    unitLabel: '+15% Tower DMG',
+    unitLabel: '+15% Tower & Tank DMG',
   },
   {
     id: 'troop_Training',
     name: 'Exoskeleton Squad Rig',
-    description: 'Boosts mobile strike squad vitality, range, and fire rate.',
+    description:
+      'Boosts Barracks Soldier & Heavy Vehicle armor HP, speed, and capture rate.',
     level: 1,
     maxLevel: 10,
     baseCostGems: 60,
     baseCostScrap: 180,
     bonusPerLevel: 0.18,
-    unitLabel: '+18% Squad Power',
+    unitLabel: '+18% Unit Power',
   },
   {
     id: 'base_fortification',
@@ -110,13 +179,14 @@ export const INITIAL_UPGRADES: UpgradeStat[] = [
   {
     id: 'salvage_scanner',
     name: 'Automated Drone Salvage',
-    description: 'Increases Scrap harvested from every eliminated zombie.',
+    description:
+      'Increases Scrap Refinery output and Scrap harvested from every eliminated zombie.',
     level: 1,
     maxLevel: 10,
     baseCostGems: 75,
     baseCostScrap: 200,
     bonusPerLevel: 0.2,
-    unitLabel: '+20% Scrap Yield',
+    unitLabel: '+20% Scrap Economy',
   },
 ];
 
@@ -186,7 +256,7 @@ export function unprojectSectorPointToLatLng(
 }
 
 /**
- * Converts a sequence of real-world GPS road coordinates from Google Maps Routes API
+ * Converts a sequence of real-world GPS road coordinates from OpenStreetMap OSRM
  * into a multi-segment tactical road corridor ending at the HQ center (0.5, 0.5).
  */
 export function convertLatLngPathToSectorRoad(
@@ -241,7 +311,7 @@ export function convertLatLngPathToSectorRoad(
 
 /**
  * Generates 4 cardinal/diagonal perimeter spawn origin coordinates around a sector's HQ
- * so Google Maps `Route.computeRoutes` can trace real-world street paths from all 4 directions into HQ.
+ * so OSRM can trace real-world street paths from all 4 directions into HQ.
  */
 export function getPerimeterRoadSpawnOrigins(
   centerLat: number,
@@ -508,19 +578,16 @@ export function calculateUpgradeCost(stat: UpgradeStat): {
 }
 
 /**
- * Computes progressive construction cost based on how many units of the same blueprint
- * are already deployed on the map (+38% per existing tower/squad of the same type).
+ * Returns the flat deployment cost of a building or ability.
+ * Placing additional towers or buildings does NOT increase the price of the next one.
  */
 export function getDynamicDeployCost(
   blueprintId: DeployableId,
-  existingCountOfSameType = 0
+  _existingCountOfSameType = 0
 ): number {
   const bp = DEPLOYABLE_BLUEPRINTS[blueprintId];
   if (!bp) return 999;
-  const growthFactor = bp.category === 'ability' ? 1.15 : 1.38;
-  return Math.round(
-    bp.baseCost * Math.pow(growthFactor, Math.max(0, existingCountOfSameType))
-  );
+  return bp.baseCost;
 }
 
 export function canAffordDeployable(
@@ -533,13 +600,386 @@ export function canAffordDeployable(
 }
 
 /**
- * Maximum number of static towers the sector command power grid can support simultaneously.
- * Starts at 6 towers; expands by +1 slot every 2 levels of Titanium Command Bulkhead.
+ * Creates the 5 strategic territorial zones on the city map:
+ * - Central HQ Zone (captured at start)
+ * - 4 Outer Fortresses (NW, NE, SE, SW) that must be captured by Soldiers & Heavy Vehicles
+ *   to expand buildable territory and liberate the entire sector.
  */
-export function getMaxTowerSlots(upgrades: UpgradeStat[]): number {
+export function createInitialFortressZones(sector?: CitySector): FortressZone[] {
+  // Position outer fortresses near the mid-outer approach of each road or 4 quadrants
+  const defaultPositions = [
+    { id: 'fortress_nw', name: 'NW Bastion Fortress', x: 0.24, y: 0.24 },
+    { id: 'fortress_ne', name: 'NE Citadel Fortress', x: 0.76, y: 0.24 },
+    { id: 'fortress_se', name: 'SE Armory Fortress', x: 0.76, y: 0.74 },
+    { id: 'fortress_sw', name: 'SW Transit Fortress', x: 0.24, y: 0.74 },
+  ];
+
+  const outerZones: FortressZone[] = defaultPositions.map((pos, idx) => {
+    const road = sector?.roads[idx];
+    // Anchor near the second waypoint of the road if within safe bounds, or use quadrant anchor
+    let fx = pos.x;
+    let fy = pos.y;
+    if (road && road.points.length >= 2) {
+      const pt = road.points[1];
+      const distFromHq = Math.hypot(pt.x - 0.5, pt.y - 0.5);
+      if (distFromHq >= 0.16 && distFromHq <= 0.42) {
+        fx = Number(Math.max(0.14, Math.min(0.86, pt.x)).toFixed(3));
+        fy = Number(Math.max(0.16, Math.min(0.82, pt.y)).toFixed(3));
+      }
+    }
+    return {
+      id: pos.id,
+      name: pos.name,
+      x: fx,
+      y: fy,
+      radius: 0.23,
+      isHq: false,
+      status: 'hostile',
+      captureProgress: 0,
+      garrisonCount: 0,
+      hostileCount: 0,
+    };
+  });
+
+  return [
+    {
+      id: 'hq_zone',
+      name: 'Central HQ Command Zone',
+      x: 0.5,
+      y: 0.5,
+      radius: 0.26,
+      isHq: true,
+      status: 'captured',
+      captureProgress: 1,
+      garrisonCount: 1,
+      hostileCount: 0,
+    },
+    ...outerZones,
+  ];
+}
+
+/**
+ * Checks whether a normalized map coordinate (normX, normY) lies inside at least one
+ * player-captured territory zone (Central HQ Zone or any captured Outer Fortress).
+ */
+export function isPointInsideCapturedZone(
+  normX: number,
+  normY: number,
+  zones: FortressZone[]
+): boolean {
+  if (!zones || zones.length === 0) return true;
+  for (const z of zones) {
+    if (z.status === 'captured') {
+      const d = Math.hypot(normX - z.x, normY - z.y);
+      if (d <= z.radius) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Steps a Fortress Zone's capture progress and handles Zone Fall when zombies
+ * eliminate defending soldiers/vehicles inside the fortress perimeter.
+ */
+export function stepFortressZoneCaptureAndFall(
+  zone: FortressZone,
+  friendlyUnitsInZone: number,
+  zombiesInZone: number,
+  dt: number
+): {
+  updatedZone: FortressZone;
+  justCaptured: boolean;
+  justFell: boolean;
+} {
+  if (zone.isHq) {
+    return {
+      updatedZone: {
+        ...zone,
+        status: 'captured',
+        captureProgress: 1,
+        garrisonCount: friendlyUnitsInZone,
+        hostileCount: zombiesInZone,
+      },
+      justCaptured: false,
+      justFell: false,
+    };
+  }
+
+  let progress = zone.captureProgress;
+  let status = zone.status;
+  let justCaptured = false;
+  let justFell = false;
+
+  if (friendlyUnitsInZone > 0 && zombiesInZone === 0) {
+    // Uncontested friendly troops capturing or reinforcing the Fortress
+    progress = Math.min(1, progress + dt * (0.16 + friendlyUnitsInZone * 0.08));
+    if (progress >= 1) {
+      if (status !== 'captured') {
+        justCaptured = true;
+      }
+      status = 'captured';
+    } else {
+      status = 'contesting';
+    }
+  } else if (friendlyUnitsInZone > 0 && zombiesInZone > 0) {
+    // Active firefight inside the Fortress perimeter
+    if (friendlyUnitsInZone > zombiesInZone) {
+      progress = Math.min(
+        1,
+        progress + dt * (friendlyUnitsInZone - zombiesInZone) * 0.05
+      );
+      if (progress >= 1 && status !== 'captured') {
+        status = 'captured';
+        justCaptured = true;
+      }
+    } else if (zombiesInZone > friendlyUnitsInZone && status !== 'captured') {
+      progress = Math.max(0, progress - dt * 0.08);
+    }
+  } else if (friendlyUnitsInZone === 0 && zombiesInZone > 0) {
+    // No living soldiers defending the Fortress while zombies swarm it -> Zone Falls when progress hits 0!
+    progress = Math.max(0, progress - dt * (0.28 + zombiesInZone * 0.12));
+    if (progress <= 0) {
+      if (status === 'captured') {
+        justFell = true;
+      }
+      status = 'hostile';
+      progress = 0;
+    }
+  }
+
+  return {
+    updatedZone: {
+      ...zone,
+      status,
+      captureProgress: Number(progress.toFixed(4)),
+      garrisonCount: friendlyUnitsInZone,
+      hostileCount: zombiesInZone,
+    },
+    justCaptured,
+    justFell,
+  };
+}
+
+export interface TerritoryCircle {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  radius: number;
+  isHq: boolean;
+}
+
+/**
+ * Returns all active Player-Controlled territory circles across the map:
+ * - Primary HQ Command Base at (0.5, 0.5) (radius 0.28)
+ * - Every built Forward HQ Base ('forward_hq') (radius 0.30 + level bonus)
+ * - Every built Heavy Fortress ('fortress') (radius 0.16 + level bonus)
+ * The union of these circles is Player-Controlled Area; the entire remaining map is Zombie-Controlled Area.
+ */
+export function getPlayerTerritoryCircles(
+  towers: {
+    id?: number;
+    blueprintId?: DeployableId;
+    x: number;
+    y: number;
+    level?: number;
+    controlRadius?: number;
+  }[],
+  primaryHqAlive = true
+): TerritoryCircle[] {
+  const circles: TerritoryCircle[] = [];
+  if (primaryHqAlive) {
+    circles.push({
+      id: 'primary_hq',
+      label: 'PRIMARY HQ COMMAND',
+      x: 0.5,
+      y: 0.5,
+      radius: 0.28,
+      isHq: true,
+    });
+  }
+
+  let hqIdx = 2;
+  let fortIdx = 1;
+  for (const t of towers) {
+    if (t.blueprintId === 'forward_hq') {
+      const lvl = t.level ?? 1;
+      circles.push({
+        id: `forward_hq_${t.id ?? hqIdx}`,
+        label: `FORWARD HQ 0${hqIdx++}`,
+        x: t.x,
+        y: t.y,
+        radius: (t.controlRadius ?? 0.30) + (lvl - 1) * 0.025,
+        isHq: true,
+      });
+    } else if (t.blueprintId === 'fortress') {
+      const lvl = t.level ?? 1;
+      circles.push({
+        id: `fortress_${t.id ?? fortIdx}`,
+        label: `FORTRESS 0${fortIdx++}`,
+        x: t.x,
+        y: t.y,
+        radius: (t.controlRadius ?? 0.16) + (lvl - 1) * 0.018,
+        isHq: false,
+      });
+    }
+  }
+  return circles;
+}
+
+/**
+ * Computes the percentage of the entire city map controlled by the Player vs. Zombies.
+ * Samples a 20x20 grid over the map. Building more Forward HQs & Heavy Fortresses
+ * expands Player-Controlled Area until reaching 100% Full Map Liberation.
+ */
+export function calculateMapControlPercentage(
+  towers: {
+    id?: number;
+    blueprintId?: DeployableId;
+    x: number;
+    y: number;
+    level?: number;
+    controlRadius?: number;
+  }[],
+  primaryHqAlive = true
+): {
+  playerPercent: number;
+  zombiePercent: number;
+  hqCount: number;
+} {
+  const circles = getPlayerTerritoryCircles(towers, primaryHqAlive);
+  const hqCount = circles.filter((c) => c.isHq).length;
+  if (circles.length === 0) {
+    return { playerPercent: 0, zombiePercent: 100, hqCount: 0 };
+  }
+
+  const gridN = 20;
+  let controlledCells = 0;
+  const totalCells = gridN * gridN;
+
+  for (let gx = 0; gx < gridN; gx++) {
+    const px = 0.04 + (gx / (gridN - 1)) * 0.92;
+    for (let gy = 0; gy < gridN; gy++) {
+      const py = 0.06 + (gy / (gridN - 1)) * 0.88;
+      let inside = false;
+      for (const c of circles) {
+        if (Math.hypot(px - c.x, py - c.y) <= c.radius) {
+          inside = true;
+          break;
+        }
+      }
+      if (inside) controlledCells++;
+    }
+  }
+
+  const rawRatio = controlledCells / totalCells;
+  // Normalize so ~84% physical circle coverage across the rectangular viewport = 100% Map Liberation
+  const playerPercent = Math.min(100, Math.round((rawRatio / 0.84) * 100));
+  return {
+    playerPercent,
+    zombiePercent: Math.max(0, 100 - playerPercent),
+    hqCount,
+  };
+}
+
+/**
+ * Checks whether a normalized map coordinate (normX, normY) is inside Player-Controlled Area
+ * or secured by nearby friendly Soldiers / Heavy Vehicles.
+ */
+export function isPointInPlayerControlledArea(
+  normX: number,
+  normY: number,
+  towers: {
+    id?: number;
+    blueprintId?: DeployableId;
+    x: number;
+    y: number;
+    level?: number;
+    controlRadius?: number;
+  }[],
+  troops: { x: number; y: number }[] = [],
+  blueprintId?: DeployableId
+): boolean {
+  const circles = getPlayerTerritoryCircles(towers, true);
+  // Forward HQs and Heavy Fortresses can be built on the frontline border (+0.15 expansion reach)
+  const expansionBonus =
+    blueprintId === 'forward_hq'
+      ? 0.16
+      : blueprintId === 'fortress'
+      ? 0.10
+      : 0;
+
+  for (const c of circles) {
+    if (Math.hypot(normX - c.x, normY - c.y) <= c.radius + expansionBonus) {
+      return true;
+    }
+  }
+
+  // Friendly Soldiers & Heavy Vehicles project a tactical vanguard zone around themselves,
+  // allowing the player to march units into Zombie-Controlled Area and build a Forward HQ or Fortress!
+  const unitVanguardRadius =
+    blueprintId === 'forward_hq' || blueprintId === 'fortress' ? 0.18 : 0.12;
+  for (const u of troops) {
+    if (Math.hypot(normX - u.x, normY - u.y) <= unitVanguardRadius) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Generates a 360-degree zombie spawn coordinate coming from every direction around the map
+ * perimeter (outside Player-Controlled Area), ensuring zombies swarm from all directions.
+ */
+export function create360ZombieSpawnPoint(
+  spawnIndex: number,
+  _totalInWave: number,
+  sector: CitySector
+): { x: number; y: number; roadIndex: number } {
+  // Cycle through all 8 compass directions (N, NE, E, SE, S, SW, W, NW) with slight ring offset
+  const sectorIdx = spawnIndex % 8;
+  const cycleOffset = Math.floor(spawnIndex / 8) * 0.18;
+  const angle = (sectorIdx * (Math.PI / 4) + cycleOffset) % (Math.PI * 2);
+  const edgeRadiusX = 0.46;
+  const edgeRadiusY = 0.43;
+  const x = Number(
+    Math.max(0.03, Math.min(0.97, 0.5 + Math.cos(angle) * edgeRadiusX)).toFixed(3)
+  );
+  const y = Number(
+    Math.max(0.05, Math.min(0.93, 0.5 + Math.sin(angle) * edgeRadiusY)).toFixed(3)
+  );
+  const roadIndex =
+    sector.roads.length > 0 ? spawnIndex % sector.roads.length : 0;
+  return { x, y, roadIndex };
+}
+
+/**
+ * Maximum number of static buildings the sector command power grid can support simultaneously.
+ * Starts at 8 in the Primary HQ zone; each additional HQ Base or captured zone adds +4 Power Grid slots!
+ */
+export function getMaxTowerSlots(
+  upgrades: UpgradeStat[],
+  activeHqOrZoneCount = 1
+): number {
   const fort = upgrades.find((u) => u.id === 'base_fortification');
   const level = fort ? fort.level : 1;
-  return 6 + Math.floor((level - 1) / 2);
+  const extraBases = Math.max(0, activeHqOrZoneCount - 1);
+  return 8 + Math.floor((level - 1) / 2) + extraBases * 3;
+}
+
+/**
+ * Calculates Scrap/sec generated by a Scrap Refinery economy building.
+ */
+export function getScrapCollectorYieldPerSecond(
+  buildingLevel: number,
+  upgrades: UpgradeStat[]
+): number {
+  const scanner = upgrades.find((u) => u.id === 'salvage_scanner');
+  const mult =
+    1 + ((scanner ? scanner.level : 1) - 1) * (scanner?.bonusPerLevel ?? 0.2);
+  const baseRate = 5 + (buildingLevel - 1) * 2.5;
+  return Number((baseRate * mult).toFixed(1));
 }
 
 export function pointToSegmentDistance(
@@ -561,25 +1001,36 @@ export function pointToSegmentDistance(
 }
 
 /**
- * Enforces tactical city placement constraints for static towers:
- * 1. Sector Power Grid cap (max active towers)
- * 2. Safe viewport perimeter margin
- * 3. HQ Command Bunker exclusion buffer
- * 4. Zombie Spawn Breach exclusion buffer
+ * Enforces tactical city placement constraints for static buildings (Towers, Heavy Fortresses,
+ * Scrap Refineries, Barracks, Vehicle Factories, and Forward HQ Bases):
+ * 1. Sector Power Grid cap (note: Forward HQ Bases expand the grid so they never get blocked by grid cap)
+ * 2. Must be inside Player-Controlled Area (or near frontline / friendly Soldiers & Vehicles)
+ * 3. Safe viewport perimeter margin
+ * 4. HQ Command Bunker center exclusion buffer
  * 5. Cannot build directly on real-world road asphalt (must build on curbs/rooftops/blocks)
- * 6. Minimum spacing between adjacent towers (no stacking)
+ * 6. Minimum spacing between adjacent buildings (no stacking)
  */
 export function validateTowerPlacement(
   normX: number,
   normY: number,
   sector: CitySector,
-  existingTowers: { x: number; y: number }[],
-  maxTowers = 6
+  existingTowers: {
+    id?: number;
+    blueprintId?: DeployableId;
+    x: number;
+    y: number;
+    level?: number;
+    controlRadius?: number;
+  }[],
+  maxTowers = 8,
+  zones?: FortressZone[],
+  troops: { x: number; y: number }[] = [],
+  blueprintId?: DeployableId
 ): PlacementValidationResult {
-  if (existingTowers.length >= maxTowers) {
+  if (blueprintId !== 'forward_hq' && existingTowers.length >= maxTowers) {
     return {
       valid: false,
-      reason: `POWER GRID FULL (${existingTowers.length}/${maxTowers} TOWERS)`,
+      reason: `POWER GRID FULL (${existingTowers.length}/${maxTowers} BUILDINGS) · BUILD FORWARD HQ`,
     };
   }
 
@@ -587,35 +1038,56 @@ export function validateTowerPlacement(
     return { valid: false, reason: 'OUTSIDE SECTOR PERIMETER' };
   }
 
+  // Check whole-map Player-Controlled Area (and optional legacy FortressZones if passed in tests)
+  const inPlayerArea = isPointInPlayerControlledArea(
+    normX,
+    normY,
+    existingTowers,
+    troops,
+    blueprintId
+  );
+  const inCapturedZone =
+    zones && zones.length > 0
+      ? isPointInsideCapturedZone(normX, normY, zones)
+      : false;
+
+  if (!inPlayerArea && !inCapturedZone) {
+    return {
+      valid: false,
+      reason:
+        blueprintId === 'forward_hq'
+          ? 'ZOMBIE AREA: MOVE SOLDIERS/VEHICLES HERE OR BUILD NEAR HQ BORDER'
+          : 'OUTSIDE PLAYER AREA: BUILD FORWARD HQ OR MOVE UNITS HERE FIRST',
+    };
+  }
+
   const distToHq = Math.hypot(normX - 0.5, normY - 0.5);
-  if (distToHq < 0.068) {
-    return { valid: false, reason: 'BLOCKED: HQ BUNKER PERIMETER' };
+  if (distToHq < 0.062) {
+    return { valid: false, reason: 'BLOCKED: PRIMARY HQ PERIMETER' };
   }
 
   for (const road of sector.roads) {
-    if (road.points.length > 0) {
-      const spawn = road.points[0];
-      if (Math.hypot(normX - spawn.x, normY - spawn.y) < 0.065) {
-        return { valid: false, reason: 'BLOCKED: HOSTILE SPAWN BREACH' };
-      }
-    }
     for (let i = 0; i < road.points.length - 1; i++) {
       const p1 = road.points[i];
       const p2 = road.points[i + 1];
       const dRoad = pointToSegmentDistance(normX, normY, p1.x, p1.y, p2.x, p2.y);
-      if (dRoad < 0.031) {
+      if (dRoad < 0.026) {
         return { valid: false, reason: 'BLOCKED: STREET ASPHALT CORRIDOR' };
       }
     }
   }
 
   for (const t of existingTowers) {
-    if (Math.hypot(normX - t.x, normY - t.y) < 0.062) {
-      return { valid: false, reason: 'BLOCKED: TOO CLOSE TO TOWER' };
+    const minSpacing =
+      blueprintId === 'forward_hq' && t.blueprintId === 'forward_hq'
+        ? 0.16
+        : 0.056;
+    if (Math.hypot(normX - t.x, normY - t.y) < minSpacing) {
+      return { valid: false, reason: 'BLOCKED: TOO CLOSE TO BUILDING' };
     }
   }
 
-  return { valid: true, reason: 'ROOFTOP / CURB SITE CLEAR' };
+  return { valid: true, reason: 'PLAYER TERRITORY SITE CLEAR' };
 }
 
 export function getEffectiveTowerStats(
@@ -635,12 +1107,19 @@ export function getEffectiveTowerStats(
     1 + ((dmgUpgrade ? dmgUpgrade.level : 1) - 1) * (dmgUpgrade?.bonusPerLevel ?? 0.15);
   const levelMultiplier = 1 + (towerLevel - 1) * 0.26;
 
+  const baseHp =
+    blueprintId === 'forward_hq'
+      ? 900
+      : blueprintId === 'fortress'
+      ? 680
+      : 240;
+
   return {
     damage: Math.round(bp.damage * globalMultiplier * levelMultiplier),
     range: Math.round(bp.range * (1 + (towerLevel - 1) * 0.055)),
     fireRate: Number((bp.fireRate * (1 + (towerLevel - 1) * 0.07)).toFixed(2)),
-    maxHp: Math.round(220 * (1 + (towerLevel - 1) * 0.35)),
-    upgradeCostScrap: Math.round(bp.baseCost * 0.95 * Math.pow(1.45, towerLevel - 1)),
+    maxHp: Math.round(baseHp * (1 + (towerLevel - 1) * 0.35)),
+    upgradeCostScrap: Math.round(bp.baseCost * 0.85 * Math.pow(1.35, towerLevel - 1)),
   };
 }
 
@@ -697,13 +1176,12 @@ export interface WaveDifficultyScaling {
 
 export function getWaveDifficultyScaling(waveNumber: number): WaveDifficultyScaling {
   const w = Math.max(1, waveNumber);
-  // High-tension endless scaling: steeper HP, speed, and damage escalation per wave
-  const hpMultiplier = Number((Math.pow(1.24, w - 1) + (w - 1) * 0.22).toFixed(2));
-  const speedMultiplier = Number(Math.min(2.35, 1 + (w - 1) * 0.055).toFixed(2));
-  const damageMultiplier = Number((1 + (w - 1) * 0.16).toFixed(2));
-  const hostileCount = Math.round(11 + w * 4 + Math.floor(Math.pow(w, 1.42)));
+  const hpMultiplier = Number((Math.pow(1.22, w - 1) + (w - 1) * 0.2).toFixed(2));
+  const speedMultiplier = Number(Math.min(2.25, 1 + (w - 1) * 0.05).toFixed(2));
+  const damageMultiplier = Number((1 + (w - 1) * 0.15).toFixed(2));
+  const hostileCount = Math.round(11 + w * 4 + Math.floor(Math.pow(w, 1.38)));
   const spawnIntervalSeconds = Number(
-    Math.max(0.16, 1.18 * Math.pow(0.89, w - 1)).toFixed(2)
+    Math.max(0.18, 1.2 * Math.pow(0.9, w - 1)).toFixed(2)
   );
 
   return {
@@ -713,7 +1191,7 @@ export function getWaveDifficultyScaling(waveNumber: number): WaveDifficultyScal
     speedMultiplier,
     damageMultiplier,
     spawnIntervalSeconds,
-    waveClearScrapBonus: 32 + w * 12,
+    waveClearScrapBonus: 36 + w * 14,
     waveClearGemsBonus: 10 + Math.floor(w * 3),
   };
 }
@@ -725,7 +1203,6 @@ export function createZombieWaveComposition(waveNumber: number): ZombieArchetype
   const list: ZombieArchetype[] = [];
 
   for (let i = 0; i < count; i++) {
-    // Juggernauts and Spitters appear earlier and more frequently in endless waves
     const juggernautMod = Math.max(3, 7 - Math.floor(w / 3));
     const spitterMod = Math.max(2, 5 - Math.floor(w / 4));
 
@@ -823,7 +1300,7 @@ export function buildProceduralSectorFromCoords(
     tileSizeKb: 3600 + Math.round(frac(5.7) * 1800),
     threatRating:
       realRoads && realRoads.length > 0
-        ? 'GOOGLE ROUTES API · REAL STREET GEOMETRY'
+        ? 'OSRM OPENSTREETMAP · REAL STREET GEOMETRY'
         : 'URBAN GRID · CACHED STREET CORRIDORS',
     realRoadSynced: Boolean(realRoads && realRoads.length > 0),
     roads,

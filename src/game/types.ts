@@ -4,20 +4,51 @@ export type DeployableId =
   | 'rotary_turret'
   | 'sniper_nest'
   | 'emp_pylon'
-  | 'rifle_squad'
-  | 'airstrike';
+  | 'fortress'
+  | 'scrap_collector'
+  | 'infantry_barracks'
+  | 'vehicle_factory'
+  | 'forward_hq'
+  | 'airstrike'
+  | 'unit_command';
+
+export type BuildingCategory =
+  | 'tower'
+  | 'fortress'
+  | 'economy'
+  | 'producer'
+  | 'hq'
+  | 'ability'
+  | 'command';
 
 export interface DeployableBlueprint {
   id: DeployableId;
   name: string;
   keyBinding: string;
   roleClue: string;
-  category: 'tower' | 'troop' | 'ability';
+  category: BuildingCategory;
   baseCost: number;
-  range: number; // in pixels on 960x600 tactical coordinate space
+  range: number; // in pixels on tactical coordinate space
   damage: number;
-  fireRate: number; // shots per second
+  fireRate: number; // shots per second (or production/income rate clue)
   color: string;
+  controlRadius?: number; // normalized [0..1] territory control radius projected by HQs & Fortresses
+  scrapPerSecond?: number;
+  spawnIntervalSeconds?: number;
+  spawnUnitType?: 'soldier' | 'heavy_vehicle';
+}
+
+export interface FortressZone {
+  id: string;
+  name: string;
+  x: number; // normalized 0..1
+  y: number; // normalized 0..1
+  radius: number; // normalized zone control radius (e.g. 0.28)
+  isHq: boolean;
+  status: 'captured' | 'contesting' | 'hostile';
+  captureProgress: number; // 0..1 (1 = captured by player)
+  garrisonCount: number; // number of living friendly units inside zone
+  hostileCount: number; // number of living zombies inside zone
 }
 
 export interface UpgradeStat {
@@ -118,6 +149,8 @@ export interface TowerEntity {
   damage: number;
   fireRate: number;
   cooldown: number;
+  productionTimer: number; // used by scrap_collector, infantry_barracks, vehicle_factory
+  controlRadius?: number; // territory control radius for forward_hq and fortress
   angle: number;
   recoil: number;
   kills: number;
@@ -130,6 +163,10 @@ export interface PlacementValidationResult {
 
 export interface TroopEntity {
   id: number;
+  unitType: 'soldier' | 'heavy_vehicle';
+  ownerBuildingId?: number;
+  targetZoneId?: string;
+  selected?: boolean;
   x: number;
   y: number;
   rallyX: number;
@@ -139,6 +176,7 @@ export interface TroopEntity {
   range: number;
   damage: number;
   fireRate: number;
+  speed: number;
   cooldown: number;
   angle: number;
   gaitPhase: number;
@@ -155,6 +193,7 @@ export interface ProjectileEntity {
   targetY: number;
   damage: number;
   isEmp: boolean;
+  isSplash: boolean;
   isZombieSpit: boolean;
   targetTowerId?: number;
   color: string;
@@ -178,6 +217,10 @@ export interface RunSnapshot {
   sectorName: string;
   waveReached: number;
   bestWave: number;
+  zonesCaptured: number;
+  totalZones: number;
+  mapControlPercent?: number;
+  hqCount?: number;
   threatMultiplier: number;
   zombiesEliminated: number;
   scrapEarned: number;

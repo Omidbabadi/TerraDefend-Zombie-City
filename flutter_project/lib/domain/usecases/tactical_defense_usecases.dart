@@ -16,6 +16,7 @@ class DeployTacticalUnitParams {
   final double damageMultiplier;
   final List<DefenseTowerEntity> existingTowers;
   final List<RoadCorridorEntity> roadCorridors;
+  final List<FortressZoneEntity> zones;
   final int maxTowerSlots;
 
   const DeployTacticalUnitParams({
@@ -28,7 +29,8 @@ class DeployTacticalUnitParams {
     this.damageMultiplier = 1.0,
     this.existingTowers = const [],
     this.roadCorridors = const [],
-    this.maxTowerSlots = 6,
+    this.zones = const [],
+    this.maxTowerSlots = 8,
   });
 }
 
@@ -72,13 +74,8 @@ class DeployTacticalUnitUseCase
   Future<Result<DeployTacticalUnitResult>> call(
     DeployTacticalUnitParams params,
   ) async {
-    final baseCost = DefenseTowerEntity.baseCostForType(params.type);
-    final sameTypeCount = params.existingTowers
-        .where((t) => t.type == params.type)
-        .length;
-    final growth =
-        params.type == DeployableType.orbitalNapalmStrike ? 1.15 : 1.38;
-    final dynamicCost = (baseCost * pow(growth, sameTypeCount)).round();
+    // Flat cost: placing new towers/buildings does NOT increase the price of the next one
+    final dynamicCost = DefenseTowerEntity.baseCostForType(params.type);
 
     final isStaticTower =
         params.type != DeployableType.orbitalNapalmStrike &&
@@ -88,9 +85,23 @@ class DeployTacticalUnitUseCase
       if (params.existingTowers.length >= params.maxTowerSlots) {
         return Result.failure(
           InsufficientFundsFailure(
-            'Power Grid Full (${params.existingTowers.length}/${params.maxTowerSlots} Towers). Upgrade HQ Bulkhead or salvage a tower.',
+            'Power Grid Full (${params.existingTowers.length}/${params.maxTowerSlots} Buildings). Capture more Fortresses or upgrade HQ.',
           ),
         );
+      }
+
+      if (params.zones.isNotEmpty) {
+        final insideCaptured = params.zones.any((z) =>
+            z.isCaptured &&
+            sqrt(pow(params.normX - z.normX, 2) + pow(params.normY - z.normY, 2)) <=
+                z.radius);
+        if (!insideCaptured) {
+          return const Result.failure(
+            InsufficientFundsFailure(
+              'Outside Captured Zone: Send Soldiers & Heavy Vehicles to capture a Fortress first.',
+            ),
+          );
+        }
       }
 
       final distHq = sqrt(

@@ -1,16 +1,12 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import {
-  Map as GoogleMapView,
-  AdvancedMarker,
-  useMapsLibrary,
-  useMap,
-} from '@vis.gl/react-google-maps';
+import React, { useEffect, useState, useCallback } from 'react';
 import { CachedSectorRoad, CitySector } from '../game/types';
+import { buildProceduralSectorFromCoords } from '../game/rules';
 import {
-  buildProceduralSectorFromCoords,
-  convertLatLngPathToSectorRoad,
-  getPerimeterRoadSpawnOrigins,
-} from '../game/rules';
+  OsmPlaceSuggestion,
+  searchOpenStreetMapPlaces,
+  traceRealRoadsWithOSRM,
+} from '../game/osmService';
+import { OpenStreetMapView } from './OpenStreetMapView';
 
 interface SectorMapModalProps {
   isOpen: boolean;
@@ -23,48 +19,6 @@ interface SectorMapModalProps {
   onCacheSector: (sector: CitySector) => void;
 }
 
-/**
- * Child component inside <GoogleMapView> that renders the active sector's real road polylines
- * directly on the Google Map so the player can inspect the exact real-world zombie street corridors.
- */
-const MapRoadCorridorPolylines: React.FC<{ roads: CachedSectorRoad[] }> = ({
-  roads,
-}) => {
-  const map = useMap();
-  const polylinesRef = useRef<google.maps.Polyline[]>([]);
-
-  useEffect(() => {
-    if (!map) return;
-
-    // Clean up existing polylines
-    polylinesRef.current.forEach((p) => p.setMap(null));
-    polylinesRef.current = [];
-
-    const created: google.maps.Polyline[] = [];
-    for (const road of roads) {
-      if (!road.latLngPoints || road.latLngPoints.length < 2) continue;
-      const poly = new google.maps.Polyline({
-        path: road.latLngPoints,
-        geodesic: true,
-        strokeColor: '#ef4444',
-        strokeOpacity: 0.88,
-        strokeWeight: 5,
-        map,
-      });
-      created.push(poly);
-    }
-
-    polylinesRef.current = created;
-
-    return () => {
-      polylinesRef.current.forEach((p) => p.setMap(null));
-      polylinesRef.current = [];
-    };
-  }, [map, roads]);
-
-  return null;
-};
-
 export const SectorMapModal: React.FC<SectorMapModalProps> = ({
   isOpen,
   onClose,
@@ -75,13 +29,8 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
   onSelectSector,
   onCacheSector,
 }) => {
-  const placesLib = useMapsLibrary('places');
-  const routesLib = useMapsLibrary('routes');
-
   const [searchQuery, setSearchQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<
-    google.maps.places.AutocompleteSuggestion[]
-  >([]);
+  const [suggestions, setSuggestions] = useState<OsmPlaceSuggestion[]>([]);
   const [cameraCenter, setCameraCenter] = useState<{ lat: number; lng: number }>({
     lat: activeSector.lat,
     lng: activeSector.lng,
@@ -101,193 +50,76 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
     setPreviewRoads(activeSector.roads);
   }, [activeSector]);
 
-  // Places API (New) AutocompleteSuggestion
+  // Free OpenStreetMap Nominatim Geocoding Search (with instant preset fallback)
   useEffect(() => {
-    if (!placesLib || !searchQuery.trim() || searchQuery.trim().length < 2) {
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
       setSuggestions([]);
       return;
     }
     let cancelled = false;
-    const { AutocompleteSuggestion, AutocompleteSessionToken } = placesLib;
-    const token = new AutocompleteSessionToken();
-
-    AutocompleteSuggestion.fetchAutocompleteSuggestions({
-      input: searchQuery,
-      sessionToken: token,
-    })
-      .then(
-        (res: {
-          suggestions: google.maps.places.AutocompleteSuggestion[];
-        }) => {
-          if (!cancelled) {
-            setSuggestions(res.suggestions || []);
-          }
-        }
-      )
-      .catch((err: unknown) => {
-        const msg = String(err);
-        if (
-          msg.includes('429') ||
-          msg.includes('RESOURCE_EXHAUSTED') ||
-          msg.includes('OVER_QUERY_LIMIT')
-        ) {
-          window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
+    const timer = window.setTimeout(() => {
+      searchOpenStreetMapPlaces(searchQuery).then((res) => {
+        if (!cancelled) {
+          setSuggestions(res);
         }
       });
+    }, 220);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [placesLib, searchQuery]);
-
-  /**
-   * Uses the modern Google Maps Platform Routes API (`Route.computeRoutes`) to trace real-world
-   * road geometry from 4 perimeter spawn points into the selected HQ coordinates.
-   */
-  const computeRealRoadCorridorsForCenter = useCallback(
-    async (
-      centerLat: number,
-      centerLng: number
-    ): Promise<CachedSectorRoad[]> => {
-      if (!routesLib || !(routesLib as unknown as { Route?: unknown }).Route) {
-        return buildProceduralSectorFromCoords(
-          previewName,
-          previewCity,
-          centerLat,
-          centerLng
-        ).roads;
-      }
-
-      const RouteClass = (
-        routesLib as unknown as {
-          Route: {
-            computeRoutes: (req: unknown) => Promise<{
-              routes?: Array<{
-                path?: Array<
-                  | { lat: number; lng: number }
-                  | { lat: () => number; lng: () => number }
-                >;
-                distanceMeters?: number;
-                legs?: Array<{
-                  steps?: Array<{
-                    path?: Array<
-                      | { lat: number; lng: number }
-                      | { lat: () => number; lng: () => number }
-                    >;
-                  }>;
-                }>;
-              }>;
-            }>;
-          };
-        }
-      ).Route;
-
-      const origins = getPerimeterRoadSpawnOrigins(centerLat, centerLng);
-      const tracedRoads: CachedSectorRoad[] = [];
-
-      await Promise.all(
-        origins.map(async (item) => {
-          try {
-            const response = await RouteClass.computeRoutes({
-              origin: item.origin,
-              destination: { lat: centerLat, lng: centerLng },
-              travelMode: 'DRIVING',
-              fields: ['path', 'distanceMeters'],
-            });
-
-            const primaryRoute = response?.routes?.[0];
-            const rawPath = primaryRoute?.path || [];
-            const latLngPath: { lat: number; lng: number }[] = rawPath.map(
-              (pt) => ({
-                lat: typeof pt.lat === 'function' ? pt.lat() : pt.lat,
-                lng: typeof pt.lng === 'function' ? pt.lng() : pt.lng,
-              })
-            );
-
-            if (latLngPath.length >= 2) {
-              tracedRoads.push(
-                convertLatLngPathToSectorRoad(
-                  item.id,
-                  item.name,
-                  latLngPath,
-                  centerLat,
-                  centerLng,
-                  primaryRoute?.distanceMeters
-                )
-              );
-            }
-          } catch (err: unknown) {
-            const msg = String(err);
-            if (
-              msg.includes('429') ||
-              msg.includes('RESOURCE_EXHAUSTED') ||
-              msg.includes('OVER_QUERY_LIMIT')
-            ) {
-              window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
-            }
-          }
-        })
-      );
-
-      if (tracedRoads.length > 0) {
-        return tracedRoads;
-      }
-
-      return buildProceduralSectorFromCoords(
-        previewName,
-        previewCity,
-        centerLat,
-        centerLng
-      ).roads;
-    },
-    [routesLib, previewName, previewCity]
-  );
+  }, [searchQuery]);
 
   const handleSuggestionSelect = useCallback(
-    async (suggestion: google.maps.places.AutocompleteSuggestion) => {
-      if (!suggestion.placePrediction) return;
-      try {
-        const place = suggestion.placePrediction.toPlace();
-        await place.fetchFields({
-          fields: ['displayName', 'formattedAddress', 'location'],
-        });
-        if (place.location) {
-          const lat = place.location.lat();
-          const lng = place.location.lng();
-          const name =
-            place.displayName || suggestion.placePrediction.text.text;
-          const addr =
-            place.formattedAddress || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-          setCameraCenter({ lat, lng });
-          setPreviewName(`${name} Defense Grid`);
-          setPreviewCity(addr);
-          setSuggestions([]);
-          setSearchQuery('');
+    async (suggestion: OsmPlaceSuggestion) => {
+      setCameraCenter({ lat: suggestion.lat, lng: suggestion.lng });
+      setPreviewName(suggestion.shortName);
+      setPreviewCity(suggestion.cityOrAddress);
+      setSuggestions([]);
+      setSearchQuery('');
 
-          setIsTracingRealRoads(true);
-          const realRoads = await computeRealRoadCorridorsForCenter(lat, lng);
-          setPreviewRoads(realRoads);
-          setIsTracingRealRoads(false);
-        }
-      } catch (err: unknown) {
-        setIsTracingRealRoads(false);
-        const msg = String(err);
-        if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
-          window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
-        }
-      }
+      setIsTracingRealRoads(true);
+      const realRoads = await traceRealRoadsWithOSRM(
+        suggestion.lat,
+        suggestion.lng,
+        suggestion.shortName,
+        suggestion.cityOrAddress
+      );
+      setPreviewRoads(realRoads);
+      setIsTracingRealRoads(false);
     },
-    [computeRealRoadCorridorsForCenter]
+    []
+  );
+
+  const handleMapLocationPick = useCallback(
+    async (lat: number, lng: number) => {
+      setCameraCenter({ lat, lng });
+      setPreviewName('Tactical OpenStreetMap Sector');
+      setPreviewCity(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      setIsTracingRealRoads(true);
+      const realRoads = await traceRealRoadsWithOSRM(
+        lat,
+        lng,
+        'Tactical OpenStreetMap Sector',
+        `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+      );
+      setPreviewRoads(realRoads);
+      setIsTracingRealRoads(false);
+    },
+    []
   );
 
   const handleTraceAndDeployRealRoads = async () => {
     setIsTracingRealRoads(true);
     setCacheNotice(
-      'Tracing real-world street geometry via Google Maps Routes API...'
+      'Tracing real-world street geometry via free OpenStreetMap OSRM router...'
     );
-    const realRoads = await computeRealRoadCorridorsForCenter(
+    const realRoads = await traceRealRoadsWithOSRM(
       cameraCenter.lat,
-      cameraCenter.lng
+      cameraCenter.lng,
+      previewName,
+      previewCity
     );
     setPreviewRoads(realRoads);
     setIsTracingRealRoads(false);
@@ -303,7 +135,7 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
     onCacheSector(customSector);
     onSelectSector(customSector);
     setCacheNotice(
-      `Synced ${realRoads.length} real-world street paths (${customSector.tileSizeKb} KB offline vector pack) for zombie waves.`
+      `Synced ${realRoads.length} real OpenStreetMap street paths (${customSector.tileSizeKb} KB offline vector pack) for zombie waves.`
     );
   };
 
@@ -321,10 +153,10 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950">
           <div>
             <h2 className="font-display text-2xl font-bold tracking-wide text-slate-100 uppercase">
-              Real-World City Sector & Google Routes Zombie Pathing
+              Real-World City Sector &amp; OpenStreetMap (OSRM) Zombie Pathing
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Zombies follow real street polylines computed via Google Maps Routes API (`Route.computeRoutes`) and cached offline.
+              100% Free OpenStreetMap tiles, Nominatim geocoding, and OSRM real-street polylines cached offline with zero API keys.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -337,7 +169,9 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
                   : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
               }`}
             >
-              {isOfflineMode ? 'Offline Vector Mode: ON' : 'Live Google Maps Mode'}
+              {isOfflineMode
+                ? 'Offline Vector Mode: ON'
+                : 'Live OpenStreetMap Mode'}
             </button>
             <button
               type="button"
@@ -359,7 +193,7 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
                 htmlFor="city-search-input"
                 className="block text-xs font-semibold text-slate-300 mb-1.5"
               >
-                Search Real-World City or Intersection (Google Places API)
+                Search Real-World City or Intersection (Free Nominatim OSM)
               </label>
               <div className="relative">
                 <input
@@ -372,14 +206,14 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
                 />
                 {suggestions.length > 0 && (
                   <ul className="absolute left-0 right-0 top-full mt-1 bg-slate-950 border border-slate-700 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-slate-800">
-                    {suggestions.map((sug, i) => (
-                      <li key={i}>
+                    {suggestions.map((sug) => (
+                      <li key={sug.placeId}>
                         <button
                           type="button"
                           onClick={() => handleSuggestionSelect(sug)}
                           className="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-slate-800 transition-colors"
                         >
-                          {sug.placePrediction?.text.text}
+                          {sug.displayName}
                         </button>
                       </li>
                     ))}
@@ -476,57 +310,17 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
             )}
           </div>
 
-          {/* Right Column: Live Interactive Google Map + Real Road Polyline Preview */}
+          {/* Right Column: Live Interactive Free OpenStreetMap + Real Road Polyline Preview */}
           <div className="lg:col-span-7 flex flex-col bg-slate-950 min-h-[360px]">
             <div className="relative flex-1 min-h-[320px] w-full">
-              <GoogleMapView
+              <OpenStreetMapView
                 center={cameraCenter}
                 zoom={16}
-                mapId="DEMO_MAP_ID"
-                gestureHandling="greedy"
-                disableDefaultUI={false}
-                internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-                onCameraChanged={(ev) => {
-                  setCameraCenter(ev.detail.center);
-                }}
-                onClick={async (ev) => {
-                  if (ev.detail.latLng) {
-                    const lat = ev.detail.latLng.lat;
-                    const lng = ev.detail.latLng.lng;
-                    setCameraCenter({ lat, lng });
-                    setPreviewName('Tactical Custom Sector');
-                    setPreviewCity(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-                    setIsTracingRealRoads(true);
-                    const realRoads = await computeRealRoadCorridorsForCenter(
-                      lat,
-                      lng
-                    );
-                    setPreviewRoads(realRoads);
-                    setIsTracingRealRoads(false);
-                  }
-                }}
-                style={{ width: '100%', height: '100%', minHeight: '320px' }}
-              >
-                <MapRoadCorridorPolylines roads={previewRoads} />
-
-                <AdvancedMarker position={cameraCenter}>
-                  <div className="px-2.5 py-1 rounded bg-amber-500 text-slate-950 font-bold text-xs shadow-lg border border-slate-950 whitespace-nowrap">
-                    HQ BUNKER TARGET
-                  </div>
-                </AdvancedMarker>
-
-                {previewRoads.map((road) => {
-                  const firstGps = road.latLngPoints?.[0];
-                  if (!firstGps) return null;
-                  return (
-                    <AdvancedMarker key={road.id} position={firstGps}>
-                      <div className="px-2 py-0.5 rounded bg-rose-600 text-white font-mono-tabular font-bold text-[10px] shadow border border-slate-950 whitespace-nowrap">
-                        SPAWN: {road.name}
-                      </div>
-                    </AdvancedMarker>
-                  );
-                })}
-              </GoogleMapView>
+                roads={previewRoads}
+                interactive={true}
+                showSpawnMarkers={true}
+                onSelectLocation={handleMapLocationPick}
+              />
             </div>
 
             {/* Bottom Action Bar for Map Coordinates & Real Road Sync */}
@@ -540,7 +334,7 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
                   </span>{' '}
                   ·{' '}
                   <span className="text-rose-400 font-semibold">
-                    {previewRoads.length} Real Street Polylines Traced
+                    {previewRoads.length} Real OSM Street Polylines Traced
                   </span>
                 </div>
                 <div className="text-sm font-semibold text-slate-100">
@@ -554,7 +348,7 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
                 className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-colors whitespace-nowrap shrink-0"
               >
                 {isTracingRealRoads
-                  ? 'Tracing Real Streets via Routes API...'
+                  ? 'Tracing Real Streets via OSRM...'
                   : 'Trace Real Roads & Deploy HQ Here'}
               </button>
             </div>
