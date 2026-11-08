@@ -1,0 +1,6 @@
+{
+  "name": "Sector Zero: City Map Defense",
+  "description": "Real-time tactical zombie base defense and tower defense strategy game over real-world Google Maps sectors with offline tactical caching, store, and Flutter SDK bundle.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
