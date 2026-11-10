@@ -125,17 +125,17 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
     setIsTracingRealRoads(false);
 
     const customSector = buildProceduralSectorFromCoords(
-      previewName,
+      `${previewName} (Full Satellite Map)`,
       previewCity,
       cameraCenter.lat,
       cameraCenter.lng,
-      16,
+      14,
       realRoads
     );
     onCacheSector(customSector);
     onSelectSector(customSector);
     setCacheNotice(
-      `Synced ${realRoads.length} real OpenStreetMap street paths (${customSector.tileSizeKb} KB offline vector pack) for zombie waves.`
+      `Synced ${realRoads.length} real city road highways (${customSector.tileSizeKb} KB satellite + road pack) for Units & Zombies.`
     );
   };
 
@@ -146,17 +146,17 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
       className="fixed inset-0 z-40 flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(9, 13, 22, 0.88)', pointerEvents: 'auto' }}
       role="dialog"
-      aria-label="City Sector Reconnaissance & Real-Road Zombie Pathing"
+      aria-label="Choose Whole City Satellite Map & Real-Road Network"
     >
       <div className="w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950">
           <div>
             <h2 className="font-display text-2xl font-bold tracking-wide text-slate-100 uppercase">
-              Real-World City Sector &amp; OpenStreetMap (OSRM) Zombie Pathing
+              Choose Whole City (Satellite Map &amp; Real-Road Network)
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              100% Free OpenStreetMap tiles, Nominatim geocoding, and OSRM real-street polylines cached offline with zero API keys.
+              Start in your central Square HQ Zone and capture the whole city on Satellite Maps. Buildings place outside roads only; all Units &amp; Zombies strictly use real roads.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -171,7 +171,7 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
             >
               {isOfflineMode
                 ? 'Offline Vector Mode: ON'
-                : 'Live OpenStreetMap Mode'}
+                : 'Live Satellite Map Mode'}
             </button>
             <button
               type="button"
@@ -179,7 +179,7 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
               aria-label="Close Sector Map Modal"
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
-              Return to Defense
+              Return to City Defense
             </button>
           </div>
         </div>

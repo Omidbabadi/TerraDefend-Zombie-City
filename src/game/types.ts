@@ -171,6 +171,8 @@ export interface TroopEntity {
   y: number;
   rallyX: number;
   rallyY: number;
+  roadPath?: { x: number; y: number }[];
+  roadPathIndex?: number;
   hp: number;
   maxHp: number;
   range: number;

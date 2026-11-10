@@ -17,6 +17,31 @@ class TacticalOverlayPainter extends CustomPainter {
     required this.isOfflineVectorMode,
   });
 
+  void _drawSquareZone(
+    Canvas canvas,
+    Size size, {
+    required double centerNormX,
+    required double centerNormY,
+    required double halfSpanNorm,
+    required Color fillColor,
+    required Color borderColor,
+  }) {
+    final cx = centerNormX * size.width;
+    final cy = centerNormY * size.height;
+    final halfW = halfSpanNorm * size.width;
+    final halfH = halfSpanNorm * size.height;
+    final rect = Rect.fromLTRB(cx - halfW, cy - halfH, cx + halfW, cy + halfH);
+
+    canvas.drawRect(rect, Paint()..color = fillColor);
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = borderColor
+        ..strokeWidth = 2.5
+        ..style = PaintingStyle.stroke,
+    );
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     if (isOfflineVectorMode) {
@@ -29,10 +54,46 @@ class TacticalOverlayPainter extends CustomPainter {
     final currentSector = sector;
     if (currentSector == null) return;
 
-    // 1. Draw Cached Urban Road Corridors
+    // 1. Draw SQUARE HQ Player-Controlled Zones (ONLY Primary HQ and Forward HQs grant Player Zones!)
+    _drawSquareZone(
+      canvas,
+      size,
+      centerNormX: 0.5,
+      centerNormY: 0.5,
+      halfSpanNorm: 0.28,
+      fillColor: const Color(0x1810B981),
+      borderColor: const Color(0xCC10B981),
+    );
+
+    for (final tower in towers) {
+      if (tower.type == DeployableType.forwardHqBase) {
+        _drawSquareZone(
+          canvas,
+          size,
+          centerNormX: tower.normX,
+          centerNormY: tower.normY,
+          halfSpanNorm: 0.24,
+          fillColor: const Color(0x1810B981),
+          borderColor: const Color(0xCC10B981),
+        );
+      } else if (tower.type == DeployableType.heavyFortress) {
+        // Heavy Fortress SQUARE Defensive Bastion Zone
+        _drawSquareZone(
+          canvas,
+          size,
+          centerNormX: tower.normX,
+          centerNormY: tower.normY,
+          halfSpanNorm: 0.16,
+          fillColor: const Color(0x18FB923C),
+          borderColor: const Color(0xCCFB923C),
+        );
+      }
+    }
+
+    // 2. Draw Cached Urban Road Corridors (Strictly used by Units and Zombies)
     final roadPaint = Paint()
-      ..color = const Color(0xDD1E293B)
-      ..strokeWidth = 24.0
+      ..color = const Color(0x881E293B)
+      ..strokeWidth = 22.0
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
@@ -53,11 +114,14 @@ class TacticalOverlayPainter extends CustomPainter {
       canvas.drawPath(path, roadPaint);
     }
 
-    // 2. Draw Central HQ Command Bunker & Automated Point-Defense Cannon at (0.5, 0.5)
+    // 3. Draw Central HQ Command Bunker & Automated Point-Defense Cannon at (0.5, 0.5)
     final hqCenter = Offset(size.width * 0.5, size.height * 0.5);
-    canvas.drawCircle(
-      hqCenter,
-      168.0 * 0.65,
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: hqCenter,
+        width: 168.0 * 1.3,
+        height: 168.0 * 1.3,
+      ),
       Paint()
         ..color = const Color(0x28F59E0B)
         ..strokeWidth = 1.2
@@ -72,11 +136,10 @@ class TacticalOverlayPainter extends CustomPainter {
       hqCenter,
       26.0,
       Paint()
-        ..color = const Color(0xFF38BDF8)
+        ..color = const Color(0xFF10B981)
         ..strokeWidth = 3.0
         ..style = PaintingStyle.stroke,
     );
-    // Aim HQ twin-barrel cannon toward closest hostile in range
     if (hostiles.isNotEmpty) {
       final target = hostiles.first;
       final targetPos = Offset(
@@ -103,7 +166,7 @@ class TacticalOverlayPainter extends CustomPainter {
       Paint()..color = const Color(0xFFF59E0B),
     );
 
-    // 3. Draw Deployed Towers & Range Rings
+    // 4. Draw Off-Road Deployed Buildings (Towers, Fortresses, Refineries, Barracks, Factories, Forward HQs)
     for (final tower in towers) {
       final pos = Offset(tower.normX * size.width, tower.normY * size.height);
       canvas.drawCircle(
@@ -118,28 +181,34 @@ class TacticalOverlayPainter extends CustomPainter {
       );
     }
 
-    // 4. Draw Mobile Strike Squads
+    // 5. Draw Soldiers & Heavy Vehicles Exiting Off-Road Buildings & Moving Strictly Along Real Roads
     for (final squad in squads) {
       final pos = Offset(squad.normX * size.width, squad.normY * size.height);
-      final rally = Offset(
-        squad.rallyNormX * size.width,
-        squad.rallyNormY * size.height,
-      );
-      canvas.drawLine(
-        pos,
-        rally,
-        Paint()
-          ..color = const Color(0x5510B981)
-          ..strokeWidth = 1.5,
-      );
+      if (squad.roadPath.isNotEmpty) {
+        final unitRoadPath = Path()..moveTo(pos.dx, pos.dy);
+        for (var i = squad.roadPathIndex; i < squad.roadPath.length; i++) {
+          final wp = squad.roadPath[i];
+          unitRoadPath.lineTo(wp.x * size.width, wp.y * size.height);
+        }
+        canvas.drawPath(
+          unitRoadPath,
+          Paint()
+            ..color = const Color(0xAA10B981)
+            ..strokeWidth = 2.0
+            ..style = PaintingStyle.stroke,
+        );
+      }
       canvas.drawCircle(
-        rally,
-        10.0,
-        Paint()..color = const Color(0xFF10B981),
+        pos,
+        squad.unitType == TrainableUnitType.heavyVehicle ? 12.0 : 9.0,
+        Paint()
+          ..color = squad.unitType == TrainableUnitType.heavyVehicle
+              ? const Color(0xFF06B6D4)
+              : const Color(0xFF10B981),
       );
     }
 
-    // 5. Draw Zombie Hostiles
+    // 6. Draw Zombie Hostiles Marching Strictly Along Real Roads
     for (final z in hostiles) {
       final pos = Offset(z.normX * size.width, z.normY * size.height);
       final radius = z.archetype == ZombieArchetype.juggernaut ? 13.0 : 8.5;

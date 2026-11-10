@@ -1,4 +1,17 @@
 import 'package:equatable/equatable.dart';
+import 'city_sector_entity.dart';
+
+enum DockTabCategory {
+  defensive,
+  economy,
+  military,
+  units,
+}
+
+enum TrainableUnitType {
+  soldier,
+  heavyVehicle,
+}
 
 enum DeployableCategory {
   tower,
@@ -46,6 +59,13 @@ class FortressZoneEntity extends Equatable {
     this.isCaptured = false,
     this.captureProgress = 0.0,
   });
+
+  /// Square HQ / Fortress Zone check using Chebyshev L-infinity distance
+  bool containsPointSquare(double px, double py) {
+    final dx = (px - normX).abs();
+    final dy = (py - normY).abs();
+    return (dx > dy ? dx : dy) <= radius;
+  }
 
   FortressZoneEntity copyWith({
     bool? isCaptured,
@@ -107,6 +127,25 @@ class DefenseTowerEntity extends Equatable {
 
   int get upgradeCostScrap => (baseCostForType(type) * 0.75 * level).round();
 
+  static DockTabCategory tabForType(DeployableType type) {
+    switch (type) {
+      case DeployableType.rotaryTurret:
+      case DeployableType.railSniperNest:
+      case DeployableType.cryoEmpPylon:
+      case DeployableType.heavyFortress:
+        return DockTabCategory.defensive;
+      case DeployableType.scrapRefinery:
+      case DeployableType.forwardHqBase:
+        return DockTabCategory.economy;
+      case DeployableType.infantryBarracks:
+      case DeployableType.heavyVehicleFactory:
+      case DeployableType.orbitalNapalmStrike:
+        return DockTabCategory.military;
+      case DeployableType.mobileStrikeSquad:
+        return DockTabCategory.units;
+    }
+  }
+
   static int baseCostForType(DeployableType type) {
     switch (type) {
       case DeployableType.rotaryTurret:
@@ -126,7 +165,7 @@ class DefenseTowerEntity extends Equatable {
       case DeployableType.forwardHqBase:
         return 260;
       case DeployableType.mobileStrikeSquad:
-        return 125;
+        return 85;
       case DeployableType.orbitalNapalmStrike:
         return 225;
     }
@@ -175,50 +214,65 @@ class DefenseTowerEntity extends Equatable {
 
 class TroopSquadEntity extends Equatable {
   final String id;
+  final TrainableUnitType unitType;
   final double normX;
   final double normY;
   final double rallyNormX;
   final double rallyNormY;
+  final List<GeoPointEntity> roadPath;
+  final int roadPathIndex;
   final double hp;
   final double maxHp;
   final double rangeMeters;
   final double damage;
   final double fireRatePerSec;
+  final double speedNormPerSec;
   final double cooldownRemaining;
 
   const TroopSquadEntity({
     required this.id,
+    this.unitType = TrainableUnitType.soldier,
     required this.normX,
     required this.normY,
     required this.rallyNormX,
     required this.rallyNormY,
-    this.hp = 160.0,
-    this.maxHp = 160.0,
-    this.rangeMeters = 130.0,
-    this.damage = 15.0,
-    this.fireRatePerSec = 2.8,
+    this.roadPath = const [],
+    this.roadPathIndex = 0,
+    this.hp = 185.0,
+    this.maxHp = 185.0,
+    this.rangeMeters = 125.0,
+    this.damage = 17.0,
+    this.fireRatePerSec = 2.6,
+    this.speedNormPerSec = 0.082,
     this.cooldownRemaining = 0.0,
   });
 
   TroopSquadEntity copyWith({
+    TrainableUnitType? unitType,
     double? normX,
     double? normY,
     double? rallyNormX,
     double? rallyNormY,
+    List<GeoPointEntity>? roadPath,
+    int? roadPathIndex,
     double? hp,
     double? cooldownRemaining,
   }) {
     return TroopSquadEntity(
       id: id,
+      unitType: unitType ?? this.unitType,
       normX: normX ?? this.normX,
       normY: normY ?? this.normY,
       rallyNormX: rallyNormX ?? this.rallyNormX,
       rallyNormY: rallyNormY ?? this.rallyNormY,
+      roadPath: roadPath ?? this.roadPath,
+      roadPathIndex: roadPathIndex ?? this.roadPathIndex,
       hp: hp ?? this.hp,
       maxHp: maxHp,
       rangeMeters: rangeMeters,
       damage: damage,
       fireRatePerSec: fireRatePerSec,
+      speedNormPerSec: speedNormPerSec,
       cooldownRemaining: cooldownRemaining ?? this.cooldownRemaining,
     );
   }
@@ -226,15 +280,19 @@ class TroopSquadEntity extends Equatable {
   @override
   List<Object?> get props => [
         id,
+        unitType,
         normX,
         normY,
         rallyNormX,
         rallyNormY,
+        roadPath,
+        roadPathIndex,
         hp,
         maxHp,
         rangeMeters,
         damage,
         fireRatePerSec,
+        speedNormPerSec,
         cooldownRemaining,
       ];
 }

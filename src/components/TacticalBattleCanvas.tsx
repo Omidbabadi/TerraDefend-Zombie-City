@@ -15,7 +15,10 @@ import {
 } from '../game/types';
 import {
   DEPLOYABLE_BLUEPRINTS,
+  TRAINABLE_UNITS,
   calculateMapControlPercentage,
+  canTrainUnit,
+  computeRoadNetworkPath,
   create360ZombieSpawnPoint,
   createInitialFortressZones,
   createZombieWaveComposition,
@@ -28,6 +31,7 @@ import {
   getScrapCollectorYieldPerSecond,
   getScrapRewardWithBonus,
   getWaveDifficultyScaling,
+  projectPointToNearestRoad,
   validateTowerPlacement,
 } from '../game/rules';
 import { soundEngine } from '../game/audio';
@@ -38,6 +42,7 @@ export interface HudSyncPayload {
   wave: number;
   threatMultiplier: number;
   zombiesRemaining: number;
+  breathingTimeRemaining: number;
   activeTowerCount: number;
   maxTowerSlots: number;
   scrapPerSec: number;
@@ -66,6 +71,10 @@ interface TacticalBattleCanvasProps {
   upgrades: UpgradeStat[];
   resetSignal: number;
   nextWaveSignal: number;
+  trainUnitSignal?: {
+    unitType: 'soldier' | 'heavy_vehicle';
+    seq: number;
+  } | null;
   unitSelectFilterSignal?: {
     filter: 'all' | 'soldier' | 'heavy_vehicle';
     seq: number;
@@ -86,6 +95,8 @@ interface TacticalBattleCanvasProps {
 
 const MAX_PARTICLES = 180;
 const MAX_PROJECTILES = 110;
+const INITIAL_PREP_SECONDS = 12.0;
+const WAVE_BREATHING_SECONDS = 16.0;
 
 export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
   gameState,
@@ -96,6 +107,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
   upgrades,
   resetSignal,
   nextWaveSignal,
+  trainUnitSignal,
   unitSelectFilterSignal,
   focusZoneIdSignal,
   onSpendScrap,
@@ -109,7 +121,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Store latest React props in refs so 60Hz loop never tears down
+  // Store latest React props in refs synchronously so 60Hz loop and pointer handlers always read latest state immediately
   const propsRef = useRef({
     gameState,
     activeSector,
@@ -123,20 +135,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     onGameEnd,
   });
 
-  useEffect(() => {
-    propsRef.current = {
-      gameState,
-      activeSector,
-      isOfflineMode,
-      selectedDeployable,
-      scrap,
-      upgrades,
-      onSpendScrap,
-      onEarnScrapAndGems,
-      onHudSync,
-      onGameEnd,
-    };
-  }, [
+  propsRef.current = {
     gameState,
     activeSector,
     isOfflineMode,
@@ -147,7 +146,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     onEarnScrapAndGems,
     onHudSync,
     onGameEnd,
-  ]);
+  };
 
   // Simulation mutable state ref
   const simRef = useRef<{
@@ -359,14 +358,27 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     ).length;
     const selectedUnitCount = sim.troops.filter((u) => u.selected).length;
 
+    const activeHostiles = sim.zombies.filter((z) => z.koTimer <= 0).length;
+    const isInitialPrep =
+      sim.wave === 1 &&
+      sim.totalSpawnedInWave === 0 &&
+      activeHostiles === 0 &&
+      sim.spawnTimer > 2.5;
+    const isBetweenWaves =
+      sim.waveQueue.length === 0 && activeHostiles === 0 && !sim.ended;
+    const breathingTimeRemaining = isInitialPrep
+      ? Math.ceil(sim.spawnTimer)
+      : isBetweenWaves
+      ? Math.max(0, Math.ceil(WAVE_BREATHING_SECONDS - sim.waveCooldownTimer))
+      : 0;
+
     return {
       baseHp: Math.round(sim.baseHp),
       baseMaxHp: sim.baseMaxHp,
       wave: sim.wave,
       threatMultiplier: getWaveDifficultyScaling(sim.wave).hpMultiplier,
-      zombiesRemaining:
-        sim.waveQueue.length +
-        sim.zombies.filter((z) => z.koTimer <= 0).length,
+      zombiesRemaining: sim.waveQueue.length + activeHostiles,
+      breathingTimeRemaining,
       activeTowerCount: sim.towers.length,
       maxTowerSlots: getMaxTowerSlots(currUpgrades, mapControl.hqCount),
       scrapPerSec: computeTotalScrapPerSec(currUpgrades),
@@ -385,6 +397,113 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       statusAlert: sim.statusAlert,
     };
   };
+
+  // Manual Unit Recruitment from the UNITS Tab (Unlocked when Barracks / Vehicle Factory is built)
+  useEffect(() => {
+    if (!trainUnitSignal) return;
+    const sim = simRef.current;
+    if (sim.ended) return;
+    const { unitType } = trainUnitSignal;
+    const counts = computeUnitCounts();
+    const check = canTrainUnit(unitType, propsRef.current.scrap, counts);
+    if (!check.allowed) {
+      sim.statusAlert = check.reason || 'CANNOT TRAIN UNIT';
+      sim.statusAlertTimer = 3.0;
+      propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
+      return;
+    }
+
+    const requiredBuildingId = TRAINABLE_UNITS[unitType].requiredBuildingId;
+    const producer =
+      sim.towers.find((t) => t.blueprintId === requiredBuildingId) || null;
+    const spawnOriginX = producer ? producer.x : 0.5;
+    const spawnOriginY = producer ? producer.y : 0.5;
+    const producerLevel = producer ? producer.level : 1;
+
+    propsRef.current.onSpendScrap(check.costScrap);
+
+    const currUpgrades = propsRef.current.upgrades;
+    const trainingUpgrade = currUpgrades.find((u) => u.id === 'troop_Training');
+    const dmgUpgrade = currUpgrades.find((u) => u.id === 'turret_damage');
+    const unitMult =
+      1 +
+      ((trainingUpgrade ? trainingUpgrade.level : 1) - 1) * 0.18 +
+      (producerLevel - 1) * 0.22;
+    const dmgMult =
+      1 +
+      ((dmgUpgrade ? dmgUpgrade.level : 1) - 1) * 0.15 +
+      (producerLevel - 1) * 0.22;
+
+    const isVehicle = unitType === 'heavy_vehicle';
+    const hp = Math.round((isVehicle ? 460 : 185) * unitMult);
+    const damage = Math.round((isVehicle ? 56 : 17) * dmgMult);
+
+    // New unit spawns at its off-road producer building, exits onto the nearest real road, and follows real roads!
+    const roadExit = projectPointToNearestRoad(
+      spawnOriginX,
+      spawnOriginY,
+      propsRef.current.activeSector.roads
+    );
+    const offsetAngle = (sim.troops.length * 1.1) % (Math.PI * 2);
+    const desiredTargetX =
+      sim.armyOrderTimer > 0
+        ? sim.armyRallyX
+        : Math.max(
+            0.12,
+            Math.min(0.88, roadExit.x + Math.cos(offsetAngle) * 0.08)
+          );
+    const desiredTargetY =
+      sim.armyOrderTimer > 0
+        ? sim.armyRallyY
+        : Math.max(
+            0.12,
+            Math.min(0.86, roadExit.y + Math.sin(offsetAngle) * 0.08)
+          );
+
+    const roadPath = computeRoadNetworkPath(
+      spawnOriginX,
+      spawnOriginY,
+      desiredTargetX,
+      desiredTargetY,
+      propsRef.current.activeSector.roads
+    );
+    const finalRoadDest = roadPath[roadPath.length - 1] || roadExit;
+
+    sim.troops.push({
+      id: sim.nextEntityId++,
+      unitType,
+      ownerBuildingId: producer?.id,
+      selected: true,
+      x: spawnOriginX,
+      y: spawnOriginY,
+      rallyX: finalRoadDest.x,
+      rallyY: finalRoadDest.y,
+      roadPath,
+      roadPathIndex: 0,
+      hp,
+      maxHp: hp,
+      range: isVehicle ? 160 : 125,
+      damage,
+      fireRate: isVehicle ? 1.2 : 2.6,
+      speed: isVehicle ? 0.062 : 0.082,
+      cooldown: 0,
+      angle: Math.atan2(roadExit.y - spawnOriginY, roadExit.x - spawnOriginX),
+      gaitPhase: 0,
+      flashTimer: 0,
+    });
+
+    soundEngine.playDeploy();
+    spawnParticles(
+      spawnOriginX * 1000,
+      spawnOriginY * 650,
+      14,
+      isVehicle ? '#06b6d4' : '#10b981',
+      95
+    );
+    sim.statusAlert = `${TRAINABLE_UNITS[unitType].name.toUpperCase()} EXITED BUILDING ONTO REAL ROAD! RIGHT-CLICK OR USE [M] TO MOVE ON ROADS`;
+    sim.statusAlertTimer = 3.4;
+    propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
+  }, [trainUnitSignal]);
 
   // Filter / Select Soldiers & Heavy Vehicles from HUD Army Bar
   useEffect(() => {
@@ -414,23 +533,38 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
   }, [unitSelectFilterSignal]);
 
-  // Quick-rally units to a quadrant when clicked in HUD
+  // Quick-rally units to a quadrant along real roads when clicked in HUD
   useEffect(() => {
     if (!focusZoneIdSignal) return;
     const sim = simRef.current;
     const targetZone = sim.zones.find((z) => z.id === focusZoneIdSignal.zoneId);
     if (!targetZone) return;
+    const snappedZoneRoad = projectPointToNearestRoad(
+      targetZone.x,
+      targetZone.y,
+      propsRef.current.activeSector.roads
+    );
     sim.priorityZoneId = targetZone.id;
-    sim.armyRallyX = targetZone.x;
-    sim.armyRallyY = targetZone.y;
+    sim.armyRallyX = snappedZoneRoad.x;
+    sim.armyRallyY = snappedZoneRoad.y;
     sim.armyOrderTimer = 2.5;
-    sim.statusAlert = `ARMY MOVING TO SECURE ${targetZone.name.toUpperCase()} SECTOR`;
+    sim.statusAlert = `ARMY MOVING ALONG REAL ROADS TO SECURE ${targetZone.name.toUpperCase()}`;
     sim.statusAlertTimer = 3.0;
     for (const unit of sim.troops) {
       if (unit.selected || sim.troops.every((t) => !t.selected)) {
         unit.selected = true;
-        unit.rallyX = targetZone.x + (Math.random() - 0.5) * 0.04;
-        unit.rallyY = targetZone.y + (Math.random() - 0.5) * 0.04;
+        const path = computeRoadNetworkPath(
+          unit.x,
+          unit.y,
+          snappedZoneRoad.x,
+          snappedZoneRoad.y,
+          propsRef.current.activeSector.roads
+        );
+        const dest = path[path.length - 1] || snappedZoneRoad;
+        unit.roadPath = path;
+        unit.roadPathIndex = 0;
+        unit.rallyX = dest.x;
+        unit.rallyY = dest.y;
       }
     }
     propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
@@ -449,7 +583,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     sim.wave = 1;
     sim.waveQueue = createZombieWaveComposition(1);
     sim.totalSpawnedInWave = 0;
-    sim.spawnTimer = 2.2;
+    sim.spawnTimer = INITIAL_PREP_SECONDS;
     sim.waveCooldownTimer = 0;
     sim.zones = initialZones;
     sim.priorityZoneId = 'fortress_nw';
@@ -458,70 +592,12 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     sim.armyRallyY = 0.36;
     sim.armyOrderTimer = 0;
     sim.statusAlert =
-      'BASE BUILDING & TERRITORY WAR: COMMAND SOLDIERS/VEHICLES & BUILD FORWARD HQs TO CONTROL 100% OF THE MAP';
-    sim.statusAlertTimer = 5.5;
+      '12s PREP TIME: BUILD ECONOMY/DEFENSES, UNLOCK BARRACKS/FACTORY FOR UNITS, AND EXPAND SQUARE HQ ZONES';
+    sim.statusAlertTimer = 6.0;
     sim.zombies = [];
     sim.towers = [];
-    // Start with 2 controllable Soldier Squads and 1 controllable Heavy Siege Tank around the Primary HQ
-    sim.troops = [
-      {
-        id: sim.nextEntityId++,
-        unitType: 'soldier',
-        selected: true,
-        x: 0.44,
-        y: 0.45,
-        rallyX: 0.42,
-        rallyY: 0.40,
-        hp: 180,
-        maxHp: 180,
-        range: 125,
-        damage: 16,
-        fireRate: 2.6,
-        speed: 0.078,
-        cooldown: 0,
-        angle: -Math.PI / 2,
-        gaitPhase: 0,
-        flashTimer: 0,
-      },
-      {
-        id: sim.nextEntityId++,
-        unitType: 'soldier',
-        selected: true,
-        x: 0.56,
-        y: 0.45,
-        rallyX: 0.58,
-        rallyY: 0.40,
-        hp: 180,
-        maxHp: 180,
-        range: 125,
-        damage: 16,
-        fireRate: 2.6,
-        speed: 0.078,
-        cooldown: 0,
-        angle: -Math.PI / 2,
-        gaitPhase: 1.5,
-        flashTimer: 0,
-      },
-      {
-        id: sim.nextEntityId++,
-        unitType: 'heavy_vehicle',
-        selected: true,
-        x: 0.50,
-        y: 0.57,
-        rallyX: 0.50,
-        rallyY: 0.62,
-        hp: 460,
-        maxHp: 460,
-        range: 160,
-        damage: 56,
-        fireRate: 1.2,
-        speed: 0.058,
-        cooldown: 0,
-        angle: Math.PI / 2,
-        gaitPhase: 0,
-        flashTimer: 0,
-      },
-    ];
+    // Units unlock when player builds Infantry Barracks or Heavy Vehicle Factory first, then trains them in UNITS tab
+    sim.troops = [];
     sim.selectedTowerId = null;
     sim.zombiesEliminated = 0;
     sim.scrapEarnedRun = 0;
@@ -532,11 +608,26 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
   }, [resetSignal, activeSector.id]);
 
-  // Trigger early next wave when requested
+  // Trigger early next wave when requested (skips remaining breathing time)
   useEffect(() => {
     if (nextWaveSignal === 0) return;
     const sim = simRef.current;
     if (sim.ended) return;
+    const activeHostiles = sim.zombies.filter((z) => z.koTimer <= 0).length;
+    if (sim.wave === 1 && sim.totalSpawnedInWave === 0 && sim.spawnTimer > 0.5) {
+      // Skip initial prep time for Wave 1
+      sim.spawnTimer = 0.2;
+      sim.scrapEarnedRun += 25;
+      propsRef.current.onEarnScrapAndGems(25, 4, 90);
+      return;
+    }
+    if (sim.waveQueue.length === 0 && activeHostiles === 0) {
+      // Currently in breathing time between waves -> start next wave immediately
+      sim.waveCooldownTimer = WAVE_BREATHING_SECONDS;
+      sim.scrapEarnedRun += 25;
+      propsRef.current.onEarnScrapAndGems(25, 4, 90);
+      return;
+    }
     sim.wave += 1;
     const nextWaveHostiles = createZombieWaveComposition(sim.wave);
     sim.waveQueue.push(...nextWaveHostiles);
@@ -618,7 +709,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     soundEngine.playDeploy();
   }, [sellTowerSignal]);
 
-  // Issue Move / Attack-Move command to selected Soldiers & Heavy Vehicles
+  // Issue Move / Attack-Move command to selected Soldiers & Heavy Vehicles strictly along REAL ROADS
   const orderUnitsToMapCoordinate = (
     normX: number,
     normY: number,
@@ -633,6 +724,10 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       return;
     }
 
+    // Snap target destination to the nearest real road in the city
+    const roads = propsRef.current.activeSector.roads;
+    const snappedTarget = projectPointToNearestRoad(normX, normY, roads);
+
     // If no units are currently selected, select all units automatically
     const hasSelected = sim.troops.some((u) => u.selected);
     const orderedUnits = hasSelected
@@ -642,26 +737,26 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     orderedUnits.forEach((u, idx) => {
       u.selected = true;
       const spreadAngle = (idx / Math.max(1, orderedUnits.length)) * Math.PI * 2;
-      const spreadRadius = orderedUnits.length > 1 ? 0.022 : 0;
-      u.rallyX = Math.max(
-        0.04,
-        Math.min(0.96, normX + Math.cos(spreadAngle) * spreadRadius)
-      );
-      u.rallyY = Math.max(
-        0.06,
-        Math.min(0.92, normY + Math.sin(spreadAngle) * spreadRadius)
-      );
+      const spreadOffset = orderedUnits.length > 1 ? 0.015 : 0;
+      const desiredX = snappedTarget.x + Math.cos(spreadAngle) * spreadOffset;
+      const desiredY = snappedTarget.y + Math.sin(spreadAngle) * spreadOffset;
+      const roadPath = computeRoadNetworkPath(u.x, u.y, desiredX, desiredY, roads);
+      const finalPt = roadPath[roadPath.length - 1] || snappedTarget;
+      u.roadPath = roadPath;
+      u.roadPathIndex = 0;
+      u.rallyX = finalPt.x;
+      u.rallyY = finalPt.y;
     });
 
-    sim.armyRallyX = normX;
-    sim.armyRallyY = normY;
+    sim.armyRallyX = snappedTarget.x;
+    sim.armyRallyY = snappedTarget.y;
     sim.armyOrderTimer = 2.4;
     sim.statusAlert = `ORDERED ${orderedUnits.length} UNIT${
       orderedUnits.length > 1 ? 'S' : ''
-    } TO MOVE & SECURE (${Math.round(normX * 100)}%, ${Math.round(
-      normY * 100
+    } ALONG REAL ROADS TO (${Math.round(snappedTarget.x * 100)}%, ${Math.round(
+      snappedTarget.y * 100
     )}%)`;
-    sim.statusAlertTimer = 2.6;
+    sim.statusAlertTimer = 2.8;
     soundEngine.playDeploy();
     spawnParticles(clickX, clickY, 12, '#34d399', 85);
     propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
@@ -764,73 +859,6 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       });
     };
 
-    const spawnProducerUnit = (
-      producer: TowerEntity,
-      currUpgrades: UpgradeStat[],
-      width: number,
-      height: number
-    ) => {
-      const sim = simRef.current;
-      const isVehicle = producer.blueprintId === 'vehicle_factory';
-      const maxActivePerBuilding = 3 + Math.floor((producer.level - 1) / 2);
-      const existingFromBuilding = sim.troops.filter(
-        (u) => u.ownerBuildingId === producer.id
-      ).length;
-      if (existingFromBuilding >= maxActivePerBuilding) return;
-
-      const trainingUpgrade = currUpgrades.find((u) => u.id === 'troop_Training');
-      const dmgUpgrade = currUpgrades.find((u) => u.id === 'turret_damage');
-      const unitMult =
-        1 +
-        ((trainingUpgrade ? trainingUpgrade.level : 1) - 1) * 0.18 +
-        (producer.level - 1) * 0.22;
-      const dmgMult =
-        1 +
-        ((dmgUpgrade ? dmgUpgrade.level : 1) - 1) * 0.15 +
-        (producer.level - 1) * 0.22;
-
-      const hp = Math.round((isVehicle ? 460 : 185) * unitMult);
-      const damage = Math.round((isVehicle ? 56 : 17) * dmgMult);
-
-      const rallyTargetX =
-        sim.armyOrderTimer > 0
-          ? sim.armyRallyX
-          : Math.max(0.1, Math.min(0.9, producer.x + (producer.x - 0.5) * 0.35));
-      const rallyTargetY =
-        sim.armyOrderTimer > 0
-          ? sim.armyRallyY
-          : Math.max(0.1, Math.min(0.88, producer.y + (producer.y - 0.5) * 0.35));
-
-      sim.troops.push({
-        id: sim.nextEntityId++,
-        unitType: isVehicle ? 'heavy_vehicle' : 'soldier',
-        ownerBuildingId: producer.id,
-        selected: true,
-        x: producer.x + (Math.random() - 0.5) * 0.025,
-        y: producer.y + (Math.random() - 0.5) * 0.025,
-        rallyX: rallyTargetX + (Math.random() - 0.5) * 0.03,
-        rallyY: rallyTargetY + (Math.random() - 0.5) * 0.03,
-        hp,
-        maxHp: hp,
-        range: isVehicle ? 160 : 125,
-        damage,
-        fireRate: isVehicle ? 1.2 : 2.6,
-        speed: isVehicle ? 0.058 : 0.078,
-        cooldown: 0,
-        angle: 0,
-        gaitPhase: 0,
-        flashTimer: 0,
-      });
-
-      spawnParticles(
-        producer.x * width,
-        producer.y * height,
-        12,
-        isVehicle ? '#06b6d4' : '#10b981',
-        85
-      );
-    };
-
     const tick = (now: number) => {
       const rawDt = (now - lastTime) / 1000;
       lastTime = now;
@@ -862,7 +890,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
         if (sim.hitstopTimer > 0) {
           sim.hitstopTimer = Math.max(0, sim.hitstopTimer - dt);
         } else {
-          // 1. Spawn zombies from 360° wave queue
+          // 1. Spawn zombies from 360° wave queue with generous breathing time between waves
           const currentWaveScaling = getWaveDifficultyScaling(sim.wave);
           if (sim.waveQueue.length > 0) {
             sim.spawnTimer -= dt;
@@ -871,8 +899,8 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
               sim.spawnTimer = currentWaveScaling.spawnIntervalSeconds;
             }
           } else if (sim.zombies.length === 0) {
-            sim.waveCooldownTimer += dt;
-            if (sim.waveCooldownTimer >= 2.6) {
+            if (sim.waveCooldownTimer === 0) {
+              // Wave just cleared! Award wave clear bonus and begin 16s Breathing Time
               const clearBonusScrap = currentWaveScaling.waveClearScrapBonus;
               const clearBonusGems = currentWaveScaling.waveClearGemsBonus;
               sim.scrapEarnedRun += clearBonusScrap;
@@ -883,12 +911,18 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
                 clearBonusGems,
                 clearBonusScrap * 5
               );
-
+              sim.statusAlert = `WAVE ${sim.wave} CLEARED (+${clearBonusScrap} SCRAP) — ${WAVE_BREATHING_SECONDS}s BREATHING TIME BEFORE NEXT ATTACK`;
+              sim.statusAlertTimer = 5.0;
+            }
+            sim.waveCooldownTimer += dt;
+            if (sim.waveCooldownTimer >= WAVE_BREATHING_SECONDS) {
               sim.wave += 1;
               sim.waveQueue = createZombieWaveComposition(sim.wave);
               sim.totalSpawnedInWave = 0;
-              sim.spawnTimer = 0.7;
+              sim.spawnTimer = 1.2;
               sim.waveCooldownTimer = 0;
+              sim.statusAlert = `WARNING: WAVE ${sim.wave} ZOMBIE ASSAULT INCOMING FROM ALL DIRECTIONS!`;
+              sim.statusAlertTimer = 3.5;
               soundEngine.playDeploy();
             }
           }
@@ -955,16 +989,26 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
               }
             }
 
-            // Move toward player-commanded destination (rallyX, rallyY)
-            const dxR = troop.rallyX - troop.x;
-            const dyR = troop.rallyY - troop.y;
+            // Move strictly along real road waypoints (`troop.roadPath`) after exiting producer building
+            const activePath = troop.roadPath;
+            const pathIdx = troop.roadPathIndex ?? 0;
+            const currentWp =
+              activePath && activePath.length > 0
+                ? activePath[Math.min(pathIdx, activePath.length - 1)]
+                : { x: troop.rallyX, y: troop.rallyY };
+
+            const dxR = currentWp.x - troop.x;
+            const dyR = currentWp.y - troop.y;
             const distR = Math.hypot(dxR, dyR);
-            if (distR > 0.006) {
-              troop.x += (dxR / distR) * troop.speed * dt;
-              troop.y += (dyR / distR) * troop.speed * dt;
+            if (distR > 0.005) {
+              const step = Math.min(distR, troop.speed * dt);
+              troop.x += (dxR / distR) * step;
+              troop.y += (dyR / distR) * step;
               troop.gaitPhase +=
                 dt * (troop.unitType === 'heavy_vehicle' ? 6 : 12);
               troop.angle = Math.atan2(dyR, dxR);
+            } else if (activePath && pathIdx < activePath.length - 1) {
+              troop.roadPathIndex = pathIdx + 1;
             }
 
             // Fire on zombies in range while moving or holding ground
@@ -1050,12 +1094,16 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
             // On-site construction assembly takes 2.2 seconds
             if (tower.buildProgress < 1) {
               tower.buildProgress = Math.min(1, tower.buildProgress + dt / 2.2);
-              if (
-                tower.buildProgress >= 1 &&
-                (tower.blueprintId === 'infantry_barracks' ||
-                  tower.blueprintId === 'vehicle_factory')
-              ) {
-                spawnProducerUnit(tower, currUpgrades, width, height);
+              if (tower.buildProgress >= 1) {
+                if (tower.blueprintId === 'infantry_barracks') {
+                  sim.statusAlert =
+                    'INFANTRY BARRACKS READY! OPEN [UNITS] TAB TO TRAIN RIFLE SOLDIERS';
+                  sim.statusAlertTimer = 4.0;
+                } else if (tower.blueprintId === 'vehicle_factory') {
+                  sim.statusAlert =
+                    'VEHICLE FACTORY READY! OPEN [UNITS] TAB TO TRAIN HEAVY SIEGE TANKS';
+                  sim.statusAlertTimer = 4.0;
+                }
               }
               continue;
             }
@@ -1089,20 +1137,6 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
                 );
               }
               continue;
-            }
-
-            // 3B. Military Producer Buildings (`infantry_barracks` & `vehicle_factory`)
-            if (bp.category === 'producer') {
-              const baseInterval = bp.spawnIntervalSeconds || 8.0;
-              const effInterval = Math.max(
-                3.5,
-                baseInterval * Math.pow(0.88, tower.level - 1)
-              );
-              tower.productionTimer += dt;
-              if (tower.productionTimer >= effInterval) {
-                tower.productionTimer = 0;
-                spawnProducerUnit(tower, currUpgrades, width, height);
-              }
             }
 
             // 3C. Combat Firing (Defensive Towers, Heavy Fortresses, Forward HQs, and Producer Self-Defense)
@@ -1215,7 +1249,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
               }
             }
 
-            if (nearestTroop && nearestTroopDistPx <= 38) {
+            if (nearestTroop && nearestTroopDistPx <= 42) {
               z.isWindingUp = true;
               z.windupTimer += dt;
               if (z.windupTimer >= 0.42) {
@@ -1243,15 +1277,6 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
                   if (uIdx !== -1) sim.troops.splice(uIdx, 1);
                 }
               }
-              continue;
-            } else if (nearestTroop && nearestTroopDistPx <= 125) {
-              const dxU = nearestTroop.x - z.x;
-              const dyU = nearestTroop.y - z.y;
-              const distU = Math.hypot(dxU, dyU) || 1;
-              const slowMult = z.slowTimer > 0 ? 0.48 : 1;
-              z.x += (dxU / distU) * z.speed * slowMult * dt;
-              z.y += (dyU / distU) * z.speed * slowMult * dt;
-              z.gaitPhase += dt * 10;
               continue;
             }
 
@@ -1299,8 +1324,8 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
               continue;
             }
 
-            // Melee attack on any Player Building (Forward HQ, Heavy Fortress, Tower, etc.)
-            if (nearestTower && nearestTowerDistPx <= 44) {
+            // Melee attack on any roadside Player Building (Forward HQ, Heavy Fortress, Tower, etc.)
+            if (nearestTower && nearestTowerDistPx <= 54) {
               z.isWindingUp = true;
               z.windupTimer += dt;
               if (z.windupTimer >= 0.44) {
@@ -1385,15 +1410,28 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
               continue;
             }
 
-            // 4C. 360° Pathfinding: Steer toward the nearest Player HQ, Heavy Fortress, or Building!
+            // 4C. Real-Road-Only Zombie Pathfinding: Zombies strictly follow the real city road segments (`road.points`)!
+            const road =
+              sector.roads[z.roadIndex % Math.max(1, sector.roads.length)];
             let goalX = 0.5;
             let goalY = 0.5;
-            if (
-              nearestTower &&
-              nearestTowerDistPx < distToHqPx * 0.92
-            ) {
-              goalX = nearestTower.x;
-              goalY = nearestTower.y;
+            if (road && road.points.length > 0) {
+              const wpIndex = Math.min(
+                z.waypointIndex,
+                road.points.length - 1
+              );
+              const wp = road.points[wpIndex];
+              goalX = wp.x;
+              goalY = wp.y;
+              if (
+                Math.hypot(goalX - z.x, goalY - z.y) <= 0.012 &&
+                z.waypointIndex < road.points.length - 1
+              ) {
+                z.waypointIndex += 1;
+                const nextWp = road.points[z.waypointIndex];
+                goalX = nextWp.x;
+                goalY = nextWp.y;
+              }
             }
 
             const dx = goalX - z.x;
@@ -1401,14 +1439,10 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
             const dist = Math.hypot(dx, dy) || 1;
             const slowMult = z.slowTimer > 0 ? 0.48 : 1;
             const effSpeed = z.speed * slowMult;
-            const weave =
-              z.archetype === 'runner'
-                ? Math.sin(z.gaitPhase * 2.2) * 0.018
-                : 0;
             const nx = dx / dist;
             const ny = dy / dist;
-            z.x += (nx - ny * weave) * effSpeed * dt;
-            z.y += (ny + nx * weave) * effSpeed * dt;
+            z.x += nx * effSpeed * dt;
+            z.y += ny * effSpeed * dt;
             z.gaitPhase += dt * (z.archetype === 'runner' ? 14 : 8);
           }
 
@@ -1628,7 +1662,6 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       }
 
       // ==================== WHOLE-MAP TERRITORY OVERLAY (PLAYER AREA VS. ZOMBIE AREA) ====================
-      const minDim = Math.min(width, height);
       const territoryCircles = getPlayerTerritoryCircles(
         sim.towers,
         sim.baseHp > 0
@@ -1660,19 +1693,19 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
           }
           mCtx.stroke();
 
-          // Punch out Player-Controlled Territory Circles (Primary HQ, Forward HQs, and Heavy Fortresses)
+          // Punch out Player-Controlled SQUARE Territory Zones (Primary HQ & Forward HQs ONLY)
           mCtx.globalCompositeOperation = 'destination-out';
           mCtx.fillStyle = '#000000';
           for (const c of territoryCircles) {
-            mCtx.beginPath();
-            mCtx.arc(c.x * mw, c.y * mh, c.radius * minDim, 0, Math.PI * 2);
-            mCtx.fill();
+            const halfW = c.radius * mw;
+            const halfH = c.radius * mh;
+            mCtx.fillRect(c.x * mw - halfW, c.y * mh - halfH, halfW * 2, halfH * 2);
           }
-          // Also punch out small Vanguard Safe Zones around friendly Soldiers & Heavy Vehicles
+          // Also punch out small square Vanguard Safe Zones around friendly Soldiers & Heavy Vehicles
           for (const u of sim.troops) {
-            mCtx.beginPath();
-            mCtx.arc(u.x * mw, u.y * mh, 0.11 * minDim, 0, Math.PI * 2);
-            mCtx.fill();
+            const uHalfW = 0.09 * mw;
+            const uHalfH = 0.09 * mh;
+            mCtx.fillRect(u.x * mw - uHalfW, u.y * mh - uHalfH, uHalfW * 2, uHalfH * 2);
           }
           mCtx.globalCompositeOperation = 'source-over';
 
@@ -1680,32 +1713,76 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
         }
       }
 
-      // 2. Render Player-Controlled Area Aura & Front-Line Borders
+      // 2. Render Player-Controlled SQUARE HQ Zones & Front-Line Borders (ONLY HQs gain Player Zones!)
       for (const c of territoryCircles) {
         const cx = c.x * width;
         const cy = c.y * height;
-        const radPx = c.radius * minDim;
+        const halfW = c.radius * width;
+        const halfH = c.radius * height;
         ctx.save();
-        ctx.fillStyle = c.isHq
-          ? 'rgba(16, 185, 129, 0.08)'
-          : 'rgba(251, 146, 60, 0.07)';
-        ctx.strokeStyle = c.isHq
-          ? 'rgba(16, 185, 129, 0.75)'
-          : 'rgba(251, 146, 60, 0.70)';
-        ctx.lineWidth = c.isHq ? 2.5 : 2;
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.82)';
+        ctx.lineWidth = 2.5;
+        ctx.fillRect(cx - halfW, cy - halfH, halfW * 2, halfH * 2);
+        ctx.strokeRect(cx - halfW, cy - halfH, halfW * 2, halfH * 2);
+
+        // Tactical Square Corner Brackets
+        const brk = 16;
+        ctx.strokeStyle = '#34d399';
+        ctx.lineWidth = 3.5;
         ctx.beginPath();
-        ctx.arc(cx, cy, radPx, 0, Math.PI * 2);
-        ctx.fill();
+        // Top-Left
+        ctx.moveTo(cx - halfW, cy - halfH + brk);
+        ctx.lineTo(cx - halfW, cy - halfH);
+        ctx.lineTo(cx - halfW + brk, cy - halfH);
+        // Top-Right
+        ctx.moveTo(cx + halfW - brk, cy - halfH);
+        ctx.lineTo(cx + halfW, cy - halfH);
+        ctx.lineTo(cx + halfW, cy - halfH + brk);
+        // Bottom-Right
+        ctx.moveTo(cx + halfW, cy + halfH - brk);
+        ctx.lineTo(cx + halfW, cy + halfH);
+        ctx.lineTo(cx + halfW - brk, cy + halfH);
+        // Bottom-Left
+        ctx.moveTo(cx - halfW + brk, cy + halfH);
+        ctx.lineTo(cx - halfW, cy + halfH);
+        ctx.lineTo(cx - halfW, cy + halfH - brk);
         ctx.stroke();
 
-        // Territory Zone Header Label
+        // Square HQ Zone Header Label
         ctx.font = 'bold 10px "JetBrains Mono", monospace';
         ctx.textAlign = 'center';
-        ctx.fillStyle = c.isHq ? '#34d399' : '#fdba74';
+        ctx.fillStyle = '#34d399';
         ctx.fillText(
-          `${c.label} · PLAYER-CONTROLLED AREA`,
+          `${c.label} · SQUARE HQ PLAYER ZONE`,
           cx,
-          Math.max(76, cy - radPx + 16)
+          Math.max(76, cy - halfH + 16)
+        );
+        ctx.restore();
+      }
+
+      // 2.5. Render Heavy Fortress SQUARE Defensive Perimeter Zones (Fortresses have square defensive zones, not HQ capture zones)
+      for (const t of sim.towers) {
+        if (t.blueprintId !== 'fortress') continue;
+        const fx = t.x * width;
+        const fy = t.y * height;
+        const fortHalfW = (t.controlRadius ?? 0.16) * width;
+        const fortHalfH = (t.controlRadius ?? 0.16) * height;
+        ctx.save();
+        ctx.fillStyle = 'rgba(251, 146, 60, 0.08)';
+        ctx.strokeStyle = 'rgba(251, 146, 60, 0.80)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 5]);
+        ctx.fillRect(fx - fortHalfW, fy - fortHalfH, fortHalfW * 2, fortHalfH * 2);
+        ctx.strokeRect(fx - fortHalfW, fy - fortHalfH, fortHalfW * 2, fortHalfH * 2);
+        ctx.setLineDash([]);
+        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#fdba74';
+        ctx.fillText(
+          `FORTRESS L${t.level} · SQUARE DEFENSE ZONE`,
+          fx,
+          Math.max(76, fy - fortHalfH + 14)
         );
         ctx.restore();
       }
@@ -1719,7 +1796,8 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       ];
       for (const q of outerQuadrants) {
         const isControlled = territoryCircles.some(
-          (c) => Math.hypot(q.x - c.x, q.y - c.y) <= c.radius * 0.85
+          (c) =>
+            Math.max(Math.abs(q.x - c.x), Math.abs(q.y - c.y)) <= c.radius * 0.9
         );
         if (!isControlled) {
           ctx.save();
@@ -1730,7 +1808,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
           ctx.font = '9px "JetBrains Mono", monospace';
           ctx.fillStyle = 'rgba(248, 113, 113, 0.72)';
           ctx.fillText(
-            'MOVE UNITS HERE & BUILD FORWARD HQ [8]',
+            'BUILD FORWARD HQ [8] IN ECONOMY TAB TO CAPTURE ZONE',
             q.x * width,
             q.y * height + 13
           );
@@ -1798,9 +1876,12 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       ctx.strokeStyle = 'rgba(245, 158, 11, 0.22)';
       ctx.lineWidth = 1.25;
       ctx.setLineDash([6, 8]);
-      ctx.beginPath();
-      ctx.arc(hqX, hqY, hqStats.range, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.strokeRect(
+        hqX - hqStats.range,
+        hqY - hqStats.range,
+        hqStats.range * 2,
+        hqStats.range * 2
+      );
       ctx.restore();
 
       ctx.save();
@@ -1856,16 +1937,34 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
           ctx.fillStyle = 'rgba(56, 189, 248, 0.10)';
           ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
           ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.arc(
-            selTower.x * width,
-            selTower.y * height,
-            selTower.range,
-            0,
-            Math.PI * 2
-          );
-          ctx.fill();
-          ctx.stroke();
+          if (
+            selTower.blueprintId === 'forward_hq' ||
+            selTower.blueprintId === 'fortress'
+          ) {
+            ctx.fillRect(
+              selTower.x * width - selTower.range,
+              selTower.y * height - selTower.range,
+              selTower.range * 2,
+              selTower.range * 2
+            );
+            ctx.strokeRect(
+              selTower.x * width - selTower.range,
+              selTower.y * height - selTower.range,
+              selTower.range * 2,
+              selTower.range * 2
+            );
+          } else {
+            ctx.beginPath();
+            ctx.arc(
+              selTower.x * width,
+              selTower.y * height,
+              selTower.range,
+              0,
+              Math.PI * 2
+            );
+            ctx.fill();
+            ctx.stroke();
+          }
         } else if (sim.hoverX > 0 && sim.hoverY > 0) {
           const bp = DEPLOYABLE_BLUEPRINTS[propsRef.current.selectedDeployable];
           if (bp.category === 'command') {
@@ -1912,24 +2011,34 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
             const isValidAndAffordable = placementCheck.valid && canAfford;
 
             ctx.save();
-            // If placing Forward HQ or Heavy Fortress, preview the new Territory Control Circle!
+            // If placing Forward HQ or Heavy Fortress, preview the new SQUARE Zone!
             if (bp.controlRadius) {
+              const halfZoneW = bp.controlRadius * width;
+              const halfZoneH = bp.controlRadius * height;
               ctx.fillStyle = isValidAndAffordable
-                ? 'rgba(34, 197, 94, 0.09)'
+                ? bp.id === 'forward_hq'
+                  ? 'rgba(34, 197, 94, 0.10)'
+                  : 'rgba(251, 146, 60, 0.10)'
                 : 'rgba(239, 68, 68, 0.08)';
-              ctx.strokeStyle = isValidAndAffordable ? '#22c55e' : '#ef4444';
+              ctx.strokeStyle = isValidAndAffordable
+                ? bp.id === 'forward_hq'
+                  ? '#22c55e'
+                  : '#fb923c'
+                : '#ef4444';
               ctx.lineWidth = 2;
               ctx.setLineDash([8, 6]);
-              ctx.beginPath();
-              ctx.arc(
-                sim.hoverX,
-                sim.hoverY,
-                bp.controlRadius * minDim,
-                0,
-                Math.PI * 2
+              ctx.fillRect(
+                sim.hoverX - halfZoneW,
+                sim.hoverY - halfZoneH,
+                halfZoneW * 2,
+                halfZoneH * 2
               );
-              ctx.fill();
-              ctx.stroke();
+              ctx.strokeRect(
+                sim.hoverX - halfZoneW,
+                sim.hoverY - halfZoneH,
+                halfZoneW * 2,
+                halfZoneH * 2
+              );
             }
 
             ctx.fillStyle = isValidAndAffordable
@@ -1942,15 +2051,28 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
             } else {
               ctx.setLineDash([]);
             }
-            ctx.beginPath();
-            ctx.arc(sim.hoverX, sim.hoverY, bp.range, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
+            if (bp.id === 'forward_hq' || bp.id === 'fortress') {
+              ctx.fillRect(
+                sim.hoverX - bp.range,
+                sim.hoverY - bp.range,
+                bp.range * 2,
+                bp.range * 2
+              );
+              ctx.strokeRect(
+                sim.hoverX - bp.range,
+                sim.hoverY - bp.range,
+                bp.range * 2,
+                bp.range * 2
+              );
+            } else {
+              ctx.beginPath();
+              ctx.arc(sim.hoverX, sim.hoverY, bp.range, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+            }
 
             ctx.setLineDash([]);
-            ctx.beginPath();
-            ctx.arc(sim.hoverX, sim.hoverY, 16, 0, Math.PI * 2);
-            ctx.stroke();
+            ctx.strokeRect(sim.hoverX - 16, sim.hoverY - 16, 32, 32);
 
             const statusLabel = !placementCheck.valid
               ? placementCheck.reason || 'BLOCKED'
@@ -2160,21 +2282,31 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
         const bob = Math.sin(troop.gaitPhase) * 1.5;
         const isTank = troop.unitType === 'heavy_vehicle';
 
-        // Tactical Movement Path Line to commanded destination
+        // Tactical Real-Road Movement Path Polyline (shows unit exiting building onto nearest road and following road segments)
         const distToRally = Math.hypot(
           troop.rallyX - troop.x,
           troop.rallyY - troop.y
         );
-        if (distToRally > 0.01) {
+        if (distToRally > 0.008) {
           ctx.save();
           ctx.strokeStyle = troop.selected
-            ? 'rgba(52, 211, 153, 0.65)'
-            : 'rgba(148, 163, 184, 0.30)';
-          ctx.lineWidth = troop.selected ? 1.8 : 1;
+            ? 'rgba(52, 211, 153, 0.78)'
+            : 'rgba(148, 163, 184, 0.35)';
+          ctx.lineWidth = troop.selected ? 2.2 : 1.2;
           ctx.setLineDash([5, 5]);
           ctx.beginPath();
           ctx.moveTo(rx, ry);
-          ctx.lineTo(troop.rallyX * width, troop.rallyY * height);
+          if (troop.roadPath && troop.roadPath.length > 0) {
+            const startIdx = troop.roadPathIndex ?? 0;
+            for (let wi = startIdx; wi < troop.roadPath.length; wi++) {
+              ctx.lineTo(
+                troop.roadPath[wi].x * width,
+                troop.roadPath[wi].y * height
+              );
+            }
+          } else {
+            ctx.lineTo(troop.rallyX * width, troop.rallyY * height);
+          }
           ctx.stroke();
           ctx.restore();
         }

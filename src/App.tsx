@@ -9,7 +9,9 @@ import {
 } from './game/types';
 import {
   DEPLOYABLE_BLUEPRINTS,
+  TRAINABLE_UNITS,
   calculateUpgradeCost,
+  canTrainUnit,
   createInitialFortressZones,
   getDynamicDeployCost,
   getEffectiveTowerStats,
@@ -68,11 +70,18 @@ export default function App() {
     () => loadPersistedEconomy().upgrades
   );
 
-  // Tactical Dock Selection & Signals
+  // Tactical Dock Tab & Selection Signals
+  const [activeDockTab, setActiveDockTab] = useState<
+    'defensive' | 'economy' | 'military' | 'units'
+  >('defensive');
   const [selectedDeployable, setSelectedDeployable] =
     useState<DeployableId>('rotary_turret');
   const [resetSignal, setResetSignal] = useState<number>(0);
   const [nextWaveSignal, setNextWaveSignal] = useState<number>(0);
+  const [trainUnitSignal, setTrainUnitSignal] = useState<{
+    unitType: 'soldier' | 'heavy_vehicle';
+    seq: number;
+  } | null>(null);
   const [unitSelectFilterSignal, setUnitSelectFilterSignal] = useState<{
     filter: 'all' | 'soldier' | 'heavy_vehicle';
     seq: number;
@@ -92,7 +101,8 @@ export default function App() {
     baseMaxHp: 1000,
     wave: 1,
     threatMultiplier: 1.0,
-    zombiesRemaining: 16,
+    zombiesRemaining: 6,
+    breathingTimeRemaining: 12,
     activeTowerCount: 0,
     maxTowerSlots: getMaxTowerSlots(loadPersistedEconomy().upgrades, 1),
     scrapPerSec: 0,
@@ -103,9 +113,9 @@ export default function App() {
     totalZonesCount: 5,
     zones: createInitialFortressZones(loadCachedSectors()[0]),
     priorityZoneId: 'fortress_nw',
-    soldierCount: 2,
-    heavyVehicleCount: 1,
-    selectedUnitCount: 3,
+    soldierCount: 0,
+    heavyVehicleCount: 0,
+    selectedUnitCount: 0,
     unitCountsByType: {
       rotary_turret: 0,
       sniper_nest: 0,
@@ -116,7 +126,7 @@ export default function App() {
       vehicle_factory: 0,
       forward_hq: 0,
       airstrike: 0,
-      unit_command: 3,
+      unit_command: 0,
     },
     selectedTower: null,
     statusAlert: null,
@@ -191,16 +201,35 @@ export default function App() {
         return;
       }
 
-      if (e.key === '1') setSelectedDeployable('rotary_turret');
-      else if (e.key === '2') setSelectedDeployable('sniper_nest');
-      else if (e.key === '3') setSelectedDeployable('emp_pylon');
-      else if (e.key === '4') setSelectedDeployable('fortress');
-      else if (e.key === '5') setSelectedDeployable('scrap_collector');
-      else if (e.key === '6') setSelectedDeployable('infantry_barracks');
-      else if (e.key === '7') setSelectedDeployable('vehicle_factory');
-      else if (e.key === '8') setSelectedDeployable('forward_hq');
-      else if (e.key === '9') setSelectedDeployable('airstrike');
-      else if (e.key === 'm' || e.key === 'M') {
+      if (e.key === '1') {
+        setActiveDockTab('defensive');
+        setSelectedDeployable('rotary_turret');
+      } else if (e.key === '2') {
+        setActiveDockTab('defensive');
+        setSelectedDeployable('sniper_nest');
+      } else if (e.key === '3') {
+        setActiveDockTab('defensive');
+        setSelectedDeployable('emp_pylon');
+      } else if (e.key === '4') {
+        setActiveDockTab('defensive');
+        setSelectedDeployable('fortress');
+      } else if (e.key === '5') {
+        setActiveDockTab('economy');
+        setSelectedDeployable('scrap_collector');
+      } else if (e.key === '6') {
+        setActiveDockTab('military');
+        setSelectedDeployable('infantry_barracks');
+      } else if (e.key === '7') {
+        setActiveDockTab('military');
+        setSelectedDeployable('vehicle_factory');
+      } else if (e.key === '8') {
+        setActiveDockTab('economy');
+        setSelectedDeployable('forward_hq');
+      } else if (e.key === '9') {
+        setActiveDockTab('military');
+        setSelectedDeployable('airstrike');
+      } else if (e.key === 'm' || e.key === 'M') {
+        setActiveDockTab('units');
         setSelectedDeployable('unit_command');
         setUnitSelectFilterSignal((prev) => ({
           filter: 'all',
@@ -378,6 +407,7 @@ export default function App() {
           upgrades={upgrades}
           resetSignal={resetSignal}
           nextWaveSignal={nextWaveSignal}
+          trainUnitSignal={trainUnitSignal}
           unitSelectFilterSignal={unitSelectFilterSignal}
           focusZoneIdSignal={focusZoneSignal}
           onSpendScrap={handleSpendScrap}
@@ -452,7 +482,7 @@ export default function App() {
                 </svg>
                 <div>
                   <div className="text-xs font-mono-tabular tracking-widest text-amber-400 uppercase">
-                    Real-City Base Building · RTS Unit Control & Territory War
+                    Whole-City Satellite Map · Real-Road Units &amp; Off-Road Base Building
                   </div>
                   <h1
                     className="font-display text-5xl md:text-6xl font-bold tracking-tight text-slate-100 uppercase leading-none mt-1"
@@ -464,7 +494,7 @@ export default function App() {
               </div>
 
               <p className="text-sm md:text-base text-slate-200 leading-relaxed max-w-lg">
-                Zombies swarm from every direction across the Zombie-Controlled Area. Build Scrap Refineries, Defensive Towers, Heavy Fortresses, Barracks, and Vehicle Factories—command your Soldiers and Heavy Vehicles into hostile streets, and construct Forward HQ Bases to expand Player-Controlled Area across 100% of the city map.
+                Choose a whole city rendered on Satellite Maps, start in your central Square HQ Zone, and capture 100% of the city. Place buildings strictly outside of roads—when Soldiers or Heavy Tanks are trained, they exit their building onto the nearest real road and battle zombies exclusively along real city roads.
               </p>
 
               {/* Primary & Secondary CTAs (<= 3 menu actions) */}
@@ -483,7 +513,7 @@ export default function App() {
                   onClick={() => setIsSectorModalOpen(true)}
                   className="px-5 py-3.5 bg-slate-900/95 hover:bg-slate-800 text-slate-100 border border-slate-700 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
                 >
-                  Choose City Map & Offline Cache
+                  Choose Whole City (Satellite Map)
                 </button>
 
                 <button
@@ -554,13 +584,13 @@ export default function App() {
 
                 <div className="border-l border-slate-800 pl-3.5">
                   <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                    Active City Map
+                    Whole City Satellite Map
                   </div>
                   <div className="text-xs font-bold text-slate-100 truncate max-w-[165px]">
                     {activeSector.name}
                   </div>
                   <div className="text-[11px] font-mono-tabular text-emerald-400 mt-0.5">
-                    {isOfflineMode ? 'OFFLINE VECTOR' : 'LIVE OPENSTREETMAP'}
+                    {isOfflineMode ? 'OFFLINE VECTOR' : 'LIVE SATELLITE MAP'}
                   </div>
                 </div>
               </div>
@@ -648,13 +678,21 @@ export default function App() {
 
                 <div className="border-l border-slate-800 pl-3.5">
                   <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                    360° SWARM · HQs
+                    {hudState.breathingTimeRemaining > 0
+                      ? 'BREATHING TIME · HQs'
+                      : '360° SWARM · HQs'}
                   </div>
                   <div className="font-display text-2xl font-bold font-mono-tabular text-slate-100 flex items-baseline gap-2">
                     <span>W{hudState.wave}</span>
-                    <span className="text-xs font-mono-tabular text-rose-400">
-                      {hudState.zombiesRemaining} ZOM
-                    </span>
+                    {hudState.breathingTimeRemaining > 0 ? (
+                      <span className="text-xs font-mono-tabular text-emerald-400 font-bold">
+                        PEACE {hudState.breathingTimeRemaining}s
+                      </span>
+                    ) : (
+                      <span className="text-xs font-mono-tabular text-rose-400">
+                        {hudState.zombiesRemaining} ZOM
+                      </span>
+                    )}
                     <span className="text-xs font-mono-tabular text-emerald-400">
                       · {hudState.hqCount} HQ
                     </span>
@@ -796,142 +834,372 @@ export default function App() {
               </div>
             )}
 
-            {/* Bottom Unified Perimeter Tactical Dock */}
+            {/* Bottom Categorized Command Dock (DEFENSIVE · ECONOMY · MILITARY · UNITS) */}
             <div className="flex items-end justify-between gap-3">
-              {/* Main Buildable & Unit Command Strip (Flat Costs — No Price Escalation) */}
-              <div className="pointer-events-auto bg-slate-950/95 border border-slate-800 rounded-xl p-1.5 shadow-2xl flex items-center gap-1.5 overflow-x-auto max-w-full">
-                {deployableList.map((bp) => {
-                  const isSelected = selectedDeployable === bp.id;
-                  const activeCount = hudState.unitCountsByType?.[bp.id] || 0;
-                  const flatCost = getDynamicDeployCost(bp.id, activeCount);
-                  const isCommandMode = bp.category === 'command';
-                  const isGridFull =
-                    !isCommandMode &&
-                    bp.category !== 'ability' &&
-                    bp.id !== 'forward_hq' &&
-                    hudState.activeTowerCount >= hudState.maxTowerSlots;
-                  const affordable =
-                    isCommandMode || (scrap >= flatCost && !isGridFull);
+              <div className="pointer-events-auto bg-slate-950/95 border border-slate-800 rounded-xl p-2 shadow-2xl flex flex-col gap-1.5 max-w-full">
+                {/* Category Tabs Row */}
+                <div className="flex items-center gap-1.5 border-b border-slate-800/90 pb-1.5">
+                  <button
+                    type="button"
+                    data-testid="tab-defensive"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setActiveDockTab('defensive');
+                      setSelectedDeployable('rotary_turret');
+                    }}
+                    className={`px-3 py-1 rounded-md text-[11px] font-display font-bold tracking-wider uppercase transition-colors ${
+                      activeDockTab === 'defensive'
+                        ? 'bg-sky-500 text-slate-950 shadow'
+                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+                    }`}
+                  >
+                    1. Defensive (4)
+                  </button>
 
-                  return (
+                  <button
+                    type="button"
+                    data-testid="tab-economy"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setActiveDockTab('economy');
+                      setSelectedDeployable('scrap_collector');
+                    }}
+                    className={`px-3 py-1 rounded-md text-[11px] font-display font-bold tracking-wider uppercase transition-colors ${
+                      activeDockTab === 'economy'
+                        ? 'bg-amber-500 text-slate-950 shadow'
+                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+                    }`}
+                  >
+                    2. Economy & HQ Zones (2)
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="tab-military"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setActiveDockTab('military');
+                      setSelectedDeployable('infantry_barracks');
+                    }}
+                    className={`px-3 py-1 rounded-md text-[11px] font-display font-bold tracking-wider uppercase transition-colors ${
+                      activeDockTab === 'military'
+                        ? 'bg-emerald-500 text-slate-950 shadow'
+                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+                    }`}
+                  >
+                    3. Military Buildings (3)
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="tab-units"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setActiveDockTab('units');
+                    }}
+                    className={`px-3 py-1 rounded-md text-[11px] font-display font-bold tracking-wider uppercase transition-colors flex items-center gap-1.5 ${
+                      activeDockTab === 'units'
+                        ? 'bg-cyan-400 text-slate-950 shadow'
+                        : 'bg-slate-900 text-cyan-300 hover:bg-slate-800 border border-cyan-800/60'
+                    }`}
+                  >
+                    <span>4. Units & Army</span>
+                    <span className="px-1.5 py-0.2 rounded bg-slate-950/60 text-[10px] font-mono-tabular">
+                      {hudState.soldierCount + hudState.heavyVehicleCount}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Active Tab Content Row */}
+                {activeDockTab !== 'units' ? (
+                  <div className="flex items-center gap-1.5 overflow-x-auto">
+                    {deployableList
+                      .filter((bp) => {
+                        if (activeDockTab === 'defensive') {
+                          return (
+                            bp.id === 'rotary_turret' ||
+                            bp.id === 'sniper_nest' ||
+                            bp.id === 'emp_pylon' ||
+                            bp.id === 'fortress'
+                          );
+                        }
+                        if (activeDockTab === 'economy') {
+                          return (
+                            bp.id === 'scrap_collector' ||
+                            bp.id === 'forward_hq'
+                          );
+                        }
+                        return (
+                          bp.id === 'infantry_barracks' ||
+                          bp.id === 'vehicle_factory' ||
+                          bp.id === 'airstrike'
+                        );
+                      })
+                      .map((bp) => {
+                        const isSelected = selectedDeployable === bp.id;
+                        const activeCount =
+                          hudState.unitCountsByType?.[bp.id] || 0;
+                        const flatCost = getDynamicDeployCost(
+                          bp.id,
+                          activeCount
+                        );
+                        const isGridFull =
+                          bp.category !== 'ability' &&
+                          bp.id !== 'forward_hq' &&
+                          hudState.activeTowerCount >= hudState.maxTowerSlots;
+                        const affordable = scrap >= flatCost && !isGridFull;
+
+                        return (
+                          <button
+                            key={bp.id}
+                            type="button"
+                            onClick={(e) => {
+                              e.currentTarget.blur();
+                              setSelectedDeployable(bp.id);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg border text-left transition-all flex items-center gap-2.5 shrink-0 ${
+                              isSelected
+                                ? 'bg-slate-800 border-amber-500 shadow-md'
+                                : 'bg-slate-900/90 border-slate-800 hover:border-slate-700'
+                            } ${!affordable ? 'opacity-60' : ''}`}
+                          >
+                            <svg
+                              width="24"
+                              height="24"
+                              viewBox="0 0 28 28"
+                              className="shrink-0"
+                            >
+                              <rect
+                                x="2"
+                                y="2"
+                                width="24"
+                                height="24"
+                                rx="4"
+                                fill="#090d16"
+                                stroke={bp.color}
+                                strokeWidth="2"
+                              />
+                              {bp.category === 'tower' && (
+                                <circle cx="14" cy="14" r="5" fill={bp.color} />
+                              )}
+                              {bp.category === 'fortress' && (
+                                <rect
+                                  x="7"
+                                  y="7"
+                                  width="14"
+                                  height="14"
+                                  fill={bp.color}
+                                />
+                              )}
+                              {bp.category === 'economy' && (
+                                <path
+                                  d="M14 6l6 8-6 8-6-8 6-8z"
+                                  fill={bp.color}
+                                />
+                              )}
+                              {bp.category === 'producer' &&
+                                bp.id === 'infantry_barracks' && (
+                                  <polygon
+                                    points="14,6 21,20 7,20"
+                                    fill={bp.color}
+                                  />
+                                )}
+                              {bp.category === 'producer' &&
+                                bp.id === 'vehicle_factory' && (
+                                  <rect
+                                    x="6"
+                                    y="9"
+                                    width="16"
+                                    height="10"
+                                    rx="2"
+                                    fill={bp.color}
+                                  />
+                                )}
+                              {bp.category === 'hq' && (
+                                <rect
+                                  x="6"
+                                  y="6"
+                                  width="16"
+                                  height="16"
+                                  fill={bp.color}
+                                />
+                              )}
+                              {bp.category === 'ability' && (
+                                <path
+                                  d="M14 5v18M5 14h18"
+                                  stroke={bp.color}
+                                  strokeWidth="2.5"
+                                />
+                              )}
+                            </svg>
+
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-slate-100 whitespace-nowrap">
+                                  [{bp.keyBinding}] {bp.name}
+                                </span>
+                                <span
+                                  className={`text-xs font-mono-tabular font-bold ${
+                                    affordable
+                                      ? 'text-amber-400'
+                                      : 'text-rose-400'
+                                  }`}
+                                >
+                                  {isGridFull
+                                    ? 'GRID FULL'
+                                    : `${flatCost} SCRAP`}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                                {bp.id === 'forward_hq'
+                                  ? 'ONLY HQs Gain Square Map Zones + HQ Cannon'
+                                  : bp.id === 'fortress'
+                                  ? 'Square Defense Bastion (680 HP · Dual Cannons)'
+                                  : bp.id === 'infantry_barracks'
+                                  ? 'Unlocks Rifle Soldiers in [4. Units] Tab'
+                                  : bp.id === 'vehicle_factory'
+                                  ? 'Unlocks Heavy Siege Tanks in [4. Units] Tab'
+                                  : bp.roleClue}
+                                {activeCount > 0
+                                  ? ` · ${activeCount} BUILT`
+                                  : ''}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                ) : (
+                  /* 4. UNITS & ARMY RECRUITMENT TAB (Unlocked when Barracks / Vehicle Factory is built) */
+                  <div className="flex items-center gap-2 overflow-x-auto">
+                    {(['soldier', 'heavy_vehicle'] as const).map((unitType) => {
+                      const unitBp = TRAINABLE_UNITS[unitType];
+                      const status = canTrainUnit(
+                        unitType,
+                        scrap,
+                        hudState.unitCountsByType
+                      );
+                      const activeUnitCount =
+                        unitType === 'soldier'
+                          ? hudState.soldierCount
+                          : hudState.heavyVehicleCount;
+
+                      return (
+                        <button
+                          key={unitType}
+                          type="button"
+                          data-testid={`train-${unitType}`}
+                          disabled={!status.allowed}
+                          onClick={(e) => {
+                            e.currentTarget.blur();
+                            setTrainUnitSignal((prev) => ({
+                              unitType,
+                              seq: (prev?.seq || 0) + 1,
+                            }));
+                          }}
+                          className={`px-3 py-1.5 rounded-lg border text-left transition-all flex items-center gap-2.5 shrink-0 ${
+                            status.allowed
+                              ? 'bg-slate-900 hover:bg-slate-800 border-emerald-500/80 shadow-md cursor-pointer'
+                              : 'bg-slate-950/90 border-slate-800 opacity-65 cursor-not-allowed'
+                          }`}
+                        >
+                          <svg
+                            width="24"
+                            height="24"
+                            viewBox="0 0 28 28"
+                            className="shrink-0"
+                          >
+                            <rect
+                              x="2"
+                              y="2"
+                              width="24"
+                              height="24"
+                              rx="4"
+                              fill="#090d16"
+                              stroke={
+                                status.unlocked
+                                  ? unitType === 'soldier'
+                                    ? '#10b981'
+                                    : '#06b6d4'
+                                  : '#475569'
+                              }
+                              strokeWidth="2"
+                            />
+                            {unitType === 'soldier' ? (
+                              <polygon
+                                points="14,6 21,20 7,20"
+                                fill={status.unlocked ? '#10b981' : '#475569'}
+                              />
+                            ) : (
+                              <rect
+                                x="6"
+                                y="9"
+                                width="16"
+                                height="10"
+                                rx="2"
+                                fill={status.unlocked ? '#06b6d4' : '#475569'}
+                              />
+                            )}
+                          </svg>
+
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-slate-100 whitespace-nowrap">
+                                Train {unitBp.name}
+                              </span>
+                              <span
+                                className={`text-xs font-mono-tabular font-bold ${
+                                  !status.unlocked
+                                    ? 'text-rose-400'
+                                    : status.allowed
+                                    ? 'text-amber-400'
+                                    : 'text-rose-400'
+                                }`}
+                              >
+                                {!status.unlocked
+                                  ? 'LOCKED'
+                                  : `${unitBp.costScrap} SCRAP`}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                              {!status.unlocked
+                                ? `Requires ${unitBp.requiredBuildingName} (Military Tab)`
+                                : `${unitBp.roleClue} · ${activeUnitCount} ACTIVE`}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                    {/* [M] Command Army Move/Attack Tool */}
                     <button
-                      key={bp.id}
                       type="button"
+                      data-testid="command-army-btn"
                       onClick={(e) => {
                         e.currentTarget.blur();
-                        setSelectedDeployable(bp.id);
+                        setSelectedDeployable('unit_command');
+                        setUnitSelectFilterSignal((prev) => ({
+                          filter: 'all',
+                          seq: (prev?.seq || 0) + 1,
+                        }));
                       }}
-                      className={`px-2.5 py-1.5 rounded-lg border text-left transition-all flex items-center gap-2 shrink-0 ${
-                        isSelected
-                          ? 'bg-slate-800 border-amber-500 shadow-md'
+                      className={`px-3 py-1.5 rounded-lg border text-left transition-all flex items-center gap-2 shrink-0 ${
+                        selectedDeployable === 'unit_command'
+                          ? 'bg-emerald-950 border-emerald-400 shadow-md'
                           : 'bg-slate-900/90 border-slate-800 hover:border-slate-700'
-                      } ${!affordable ? 'opacity-60' : ''}`}
+                      }`}
                     >
-                      {/* Custom SVG Silhouette Icon */}
-                      <svg
-                        width="24"
-                        height="24"
-                        viewBox="0 0 28 28"
-                        className="shrink-0"
-                      >
-                        <rect
-                          x="2"
-                          y="2"
-                          width="24"
-                          height="24"
-                          rx="6"
-                          fill="#090d16"
-                          stroke={bp.color}
-                          strokeWidth="2"
-                        />
-                        {bp.category === 'tower' && (
-                          <circle cx="14" cy="14" r="5" fill={bp.color} />
-                        )}
-                        {bp.category === 'fortress' && (
-                          <rect
-                            x="7"
-                            y="7"
-                            width="14"
-                            height="14"
-                            rx="3"
-                            fill={bp.color}
-                          />
-                        )}
-                        {bp.category === 'economy' && (
-                          <path
-                            d="M14 6l6 8-6 8-6-8 6-8z"
-                            fill={bp.color}
-                          />
-                        )}
-                        {bp.category === 'producer' &&
-                          bp.id === 'infantry_barracks' && (
-                            <polygon points="14,6 21,20 7,20" fill={bp.color} />
-                          )}
-                        {bp.category === 'producer' &&
-                          bp.id === 'vehicle_factory' && (
-                            <rect
-                              x="6"
-                              y="9"
-                              width="16"
-                              height="10"
-                              rx="2"
-                              fill={bp.color}
-                            />
-                          )}
-                        {bp.category === 'hq' && (
-                          <polygon
-                            points="14,5 22,10 22,18 14,23 6,18 6,10"
-                            fill={bp.color}
-                          />
-                        )}
-                        {bp.category === 'ability' && (
-                          <path
-                            d="M14 5v18M5 14h18"
-                            stroke={bp.color}
-                            strokeWidth="2.5"
-                          />
-                        )}
-                        {bp.category === 'command' && (
-                          <path
-                            d="M7 14h14M15 8l6 6-6 6"
-                            stroke={bp.color}
-                            strokeWidth="2.5"
-                            fill="none"
-                          />
-                        )}
-                      </svg>
-
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-bold text-slate-100 whitespace-nowrap">
-                            [{bp.keyBinding}] {bp.name}
-                          </span>
-                          <span
-                            className={`text-[11px] font-mono-tabular font-bold ${
-                              isCommandMode
-                                ? 'text-emerald-400'
-                                : affordable
-                                ? 'text-amber-400'
-                                : 'text-rose-400'
-                            }`}
-                          >
-                            {isCommandMode
-                              ? `${activeCount} UNITS`
-                              : isGridFull
-                              ? 'GRID FULL'
-                              : `${flatCost} SCRAP`}
-                          </span>
+                        <div className="text-xs font-bold text-emerald-300 whitespace-nowrap">
+                          [M] Command Army ({hudState.soldierCount + hudState.heavyVehicleCount} Active)
                         </div>
                         <div className="text-[10px] text-slate-400 whitespace-nowrap">
-                          {bp.roleClue}
-                          {!isCommandMode && activeCount > 0
-                            ? ` · ${activeCount} BUILT`
-                            : ''}
+                          Click or Right-Click Map to Move Soldiers & Tanks
                         </div>
                       </div>
                     </button>
-                  );
-                })}
+                  </div>
+                )}
               </div>
 
               {/* Selected Building Inspector OR Wave Trigger Card */}
@@ -964,17 +1232,17 @@ export default function App() {
                             upgrades
                           )} SCRAP/SEC`
                         : hudState.selectedTower.blueprintId === 'forward_hq'
-                        ? `EXPANDS PLAYER MAP AREA · HQ CANNON ${selectedTowerStats.damage} DMG`
+                        ? `SQUARE PLAYER HQ ZONE · CANNON ${selectedTowerStats.damage} DMG`
                         : hudState.selectedTower.blueprintId === 'fortress'
-                        ? `HEAVY FORTRESS BASTION · DUAL CANNONS ${selectedTowerStats.damage} DMG`
+                        ? `SQUARE FORTRESS BASTION · DUAL CANNONS ${selectedTowerStats.damage} DMG`
                         : hudState.selectedTower.blueprintId ===
                           'infantry_barracks'
-                        ? `TRAINS SOLDIER SQUADS · SELF-DEFENSE ${Math.round(
+                        ? `UNLOCKS SOLDIERS IN [UNITS] TAB · SELF-DEFENSE ${Math.round(
                             selectedTowerStats.damage * 0.45
                           )} DMG`
                         : hudState.selectedTower.blueprintId ===
                           'vehicle_factory'
-                        ? `PRODUCES HEAVY SIEGE TANKS (${selectedTowerStats.damage} DMG)`
+                        ? `UNLOCKS SIEGE TANKS IN [UNITS] TAB (${selectedTowerStats.damage} DMG)`
                         : `DMG ${selectedTowerStats.damage} · RNG ${
                             selectedTowerStats.range
                           }m`}
@@ -1035,7 +1303,17 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div className="pointer-events-auto bg-slate-950/95 border border-slate-800 rounded-xl px-3.5 py-2 shadow-2xl flex items-center gap-2 shrink-0">
+                <div className="pointer-events-auto bg-slate-950/95 border border-slate-800 rounded-xl px-3.5 py-2 shadow-2xl flex items-center gap-2.5 shrink-0">
+                  {hudState.breathingTimeRemaining > 0 && (
+                    <div className="text-right">
+                      <div className="text-[10px] font-mono-tabular uppercase text-emerald-400 font-bold">
+                        BREATHING TIME
+                      </div>
+                      <div className="text-xs font-mono-tabular font-bold text-slate-200">
+                        Next Attack in {hudState.breathingTimeRemaining}s
+                      </div>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => setNextWaveSignal((n) => n + 1)}

@@ -63,19 +63,19 @@ test('validateTowerPlacement enforces Player-Controlled Area, street asphalt, HQ
   assert.equal(onHq.valid, false);
 
   // 2. Cannot build in Zombie-Controlled Area without Forward HQ or nearby Soldiers/Vehicles
-  const outsideZone = validateTowerPlacement(0.18, 0.18, sector, [], maxSlots, zones);
+  const outsideZone = validateTowerPlacement(0.18, 0.28, sector, [], maxSlots, zones);
   assert.equal(outsideZone.valid, false);
   assert.equal(outsideZone.reason?.includes('OUTSIDE PLAYER AREA'), true);
 
-  // 2b. When a Soldier or Heavy Vehicle moves to (0.18, 0.18), the player CAN build a Forward HQ Base there!
+  // 2b. When a Soldier or Heavy Vehicle moves along the road to (0.20, 0.22), the player CAN build a Forward HQ Base off-road at (0.18, 0.28)!
   const withUnitVanguard = validateTowerPlacement(
     0.18,
-    0.18,
+    0.28,
     sector,
     [],
     maxSlots,
     undefined,
-    [{ x: 0.19, y: 0.19 }],
+    [{ x: 0.20, y: 0.22 }],
     'forward_hq'
   );
   assert.equal(withUnitVanguard.valid, true);
@@ -105,27 +105,45 @@ test('validateTowerPlacement enforces Player-Controlled Area, street asphalt, HQ
   assert.equal(overflow.reason?.includes('GRID FULL'), true);
 });
 
-test('Whole-map Player vs. Zombie territory calculation and 360-degree zombie spawning', () => {
+test('Whole-map Player vs. Zombie SQUARE territory calculation (HQ-only) and 360-degree zombie spawning', async () => {
+  const { canTrainUnit, isPointInPlayerControlledArea } = await import('./rules');
   const sector = PRESET_CITY_SECTORS[0];
   const initialCtrl = calculateMapControlPercentage([], true);
   assert.equal(initialCtrl.hqCount, 1);
   assert.equal(initialCtrl.playerPercent > 20 && initialCtrl.playerPercent < 50, true);
   assert.equal(initialCtrl.playerPercent + initialCtrl.zombiePercent, 100);
 
-  // Building Forward HQs and Heavy Fortresses across the 4 quadrants expands Player-Controlled Area to 100%
+  // 1. Only HQs gain zones: placing a Heavy Fortress does NOT increase Player-Controlled Area or HQ count
+  const withFortressOnly = calculateMapControlPercentage(
+    [{ blueprintId: 'fortress', x: 0.25, y: 0.25, level: 2, controlRadius: 0.16 }],
+    true
+  );
+  assert.equal(withFortressOnly.hqCount, 1);
+  assert.equal(withFortressOnly.playerPercent, initialCtrl.playerPercent);
+
+  // 2. Square Zone Geometry: corner of Primary HQ square (0.74, 0.74) is inside the 0.25 half-width square!
+  assert.equal(isPointInPlayerControlledArea(0.74, 0.74, [], []), true);
+  assert.equal(isPointInPlayerControlledArea(0.77, 0.77, [], []), false);
+
+  // 3. Building Forward HQs across the 4 quadrants expands Square Player-Controlled Area to 100%
   const expandedCtrl = calculateMapControlPercentage(
     [
-      { blueprintId: 'forward_hq', x: 0.25, y: 0.25, level: 2, controlRadius: 0.30 },
-      { blueprintId: 'forward_hq', x: 0.75, y: 0.25, level: 2, controlRadius: 0.30 },
-      { blueprintId: 'forward_hq', x: 0.75, y: 0.75, level: 2, controlRadius: 0.30 },
-      { blueprintId: 'forward_hq', x: 0.25, y: 0.75, level: 2, controlRadius: 0.30 },
-      { blueprintId: 'fortress', x: 0.50, y: 0.20, level: 1, controlRadius: 0.16 },
+      { blueprintId: 'forward_hq', x: 0.25, y: 0.25, level: 2, controlRadius: 0.28 },
+      { blueprintId: 'forward_hq', x: 0.75, y: 0.25, level: 2, controlRadius: 0.28 },
+      { blueprintId: 'forward_hq', x: 0.75, y: 0.75, level: 2, controlRadius: 0.28 },
+      { blueprintId: 'forward_hq', x: 0.25, y: 0.75, level: 2, controlRadius: 0.28 },
     ],
     true
   );
   assert.equal(expandedCtrl.hqCount, 5);
   assert.equal(expandedCtrl.playerPercent, 100);
   assert.equal(expandedCtrl.zombiePercent, 0);
+
+  // 4. Unit training unlock rules: units are locked until their producer building is built
+  assert.equal(canTrainUnit('soldier', 300, { infantry_barracks: 0 }).unlocked, false);
+  assert.equal(canTrainUnit('soldier', 300, { infantry_barracks: 1 }).allowed, true);
+  assert.equal(canTrainUnit('heavy_vehicle', 300, { vehicle_factory: 0 }).unlocked, false);
+  assert.equal(canTrainUnit('heavy_vehicle', 300, { vehicle_factory: 1 }).allowed, true);
 
   // Verify 360° zombie spawns come from all 4 compass quadrants around the map perimeter
   const spawns = Array.from({ length: 16 }, (_, i) =>
@@ -222,13 +240,13 @@ test('getMaxBaseHp, getHqDefenseWeaponStats, and getScrapRewardWithBonus reflect
   assert.equal(upgradedHqWeapon.fireRate > baseHqWeapon.fireRate, true);
 });
 
-test('createZombieWaveComposition and getWaveDifficultyScaling scale endlessly with each wave', async () => {
+test('createZombieWaveComposition and getWaveDifficultyScaling start light in Wave 1 and scale harder over time', async () => {
   const { getWaveDifficultyScaling } = await import('./rules');
   const wave1 = createZombieWaveComposition(1);
   const wave5 = createZombieWaveComposition(5);
   const wave12 = createZombieWaveComposition(12);
 
-  assert.equal(wave1.length, 16);
+  assert.equal(wave1.length, 6);
   assert.equal(wave5.length > wave1.length, true);
   assert.equal(wave12.length > wave5.length, true);
   assert.equal(wave5.includes('spitter'), true);
@@ -321,4 +339,50 @@ test('Flutter Clean Architecture project contains all 20 layered source files on
     const content = fs.readFileSync(file, 'utf8');
     assert.equal(content.length > 100, true, `Empty or truncated ${file}`);
   }
+
+  // Verify Flutter Clean Architecture files include Satellite Map tiles, 4 Dock Tabs, Square Zones, and Real-Road Pathing
+  const pageDart = fs.readFileSync(
+    'flutter_project/lib/presentation/pages/tactical_defense_page.dart',
+    'utf8'
+  );
+  assert.equal(pageDart.includes('World_Imagery/MapServer/tile'), true);
+  assert.equal(pageDart.includes('1. DEFENSIVE'), true);
+  assert.equal(pageDart.includes('4. UNITS & ARMY'), true);
+
+  const usecasesDart = fs.readFileSync(
+    'flutter_project/lib/domain/usecases/tactical_defense_usecases.dart',
+    'utf8'
+  );
+  assert.equal(usecasesDart.includes('computeRoadNetworkPath'), true);
+  assert.equal(usecasesDart.includes('projectPointToNearestRoad'), true);
 });
+
+test('projectPointToNearestRoad and computeRoadNetworkPath route newly built units from off-road buildings onto real roads', async () => {
+  const { projectPointToNearestRoad, computeRoadNetworkPath } = await import(
+    './rules'
+  );
+  const sector = PRESET_CITY_SECTORS[0];
+  assert.equal(sector.name.includes('Full Satellite Map'), true);
+
+  // Off-road building coordinate at (0.59, 0.59)
+  const exitPt = projectPointToNearestRoad(0.59, 0.59, sector.roads);
+  assert.equal(exitPt.distance > 0.03, true);
+
+  // Verify exitPt lies directly on a real road segment (distance to road is ~0)
+  const checkOnRoad = projectPointToNearestRoad(exitPt.x, exitPt.y, sector.roads);
+  assert.equal(checkOnRoad.distance < 1e-6, true);
+
+  // Compute road network path from off-road Barracks (0.59, 0.59) to NW road approach (0.18, 0.18)
+  const roadPath = computeRoadNetworkPath(0.59, 0.59, 0.18, 0.18, sector.roads);
+  assert.equal(roadPath.length >= 3, true);
+  // First waypoint is the road exit point where the unit enters the real road
+  assert.equal(Math.abs(roadPath[0].x - exitPt.x) < 1e-6, true);
+  assert.equal(Math.abs(roadPath[0].y - exitPt.y) < 1e-6, true);
+
+  // Every waypoint in roadPath lies on the real road network
+  for (const wp of roadPath) {
+    const proj = projectPointToNearestRoad(wp.x, wp.y, sector.roads);
+    assert.equal(proj.distance < 1e-5, true);
+  }
+});
+

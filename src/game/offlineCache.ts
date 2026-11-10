@@ -1,7 +1,7 @@
 import { CitySector, UpgradeStat } from './types';
 import { INITIAL_UPGRADES, PRESET_CITY_SECTORS } from './rules';
 
-const SECTORS_STORAGE_KEY = 'sector_zero_cached_sectors_v3';
+const SECTORS_STORAGE_KEY = 'sector_zero_cached_sectors_v4';
 const ECONOMY_STORAGE_KEY = 'sector_zero_economy_v2';
 
 export interface PersistedEconomyState {

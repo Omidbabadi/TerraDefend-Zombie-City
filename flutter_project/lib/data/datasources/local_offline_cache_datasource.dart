@@ -31,7 +31,7 @@ class HiveOfflineCacheDataSourceImpl implements LocalOfflineCacheDataSource {
     required this.economyBox,
   });
 
-  /// Projects a real-world GPS coordinate onto the [0..1] tactical sector viewport
+  /// Projects a real-world GPS coordinate onto the [0..1] whole-city satellite viewport
   static GeoPointEntity projectLatLngToSector(
     double lat,
     double lng,
@@ -51,7 +51,7 @@ class HiveOfflineCacheDataSourceImpl implements LocalOfflineCacheDataSource {
     );
   }
 
-  /// Decodes a Google Maps encoded polyline string into real-world (lat, lng) vertices
+  /// Decodes an OSRM / Google encoded polyline string into real-world (lat, lng) vertices
   static List<List<double>> decodeGoogleEncodedPolyline(String encoded) {
     final points = <List<double>>[];
     int index = 0;
@@ -86,44 +86,56 @@ class HiveOfflineCacheDataSourceImpl implements LocalOfflineCacheDataSource {
     return points;
   }
 
+  /// Whole-City Satellite Map Presets (Player starts in central Square HQ Zone and captures 100% of the city)
   static final List<CitySectorModel> _defaultPresetSectors = [
     CitySectorModel(
       id: 'manhattan_midtown',
-      name: 'Midtown Grid Sector 04',
-      city: 'New York, USA',
+      name: 'New York City (Full Satellite Map)',
+      city: 'New York City, USA',
       latitude: 40.7580,
       longitude: -73.9855,
+      zoom: 14.0,
       cachedTimestampMs: 1730980000000,
-      tilePackageSizeKb: 4280,
-      threatRating: 'MODERATE · REAL MANHATTAN STREET GRID',
+      tilePackageSizeKb: 6420,
+      threatRating: 'WHOLE CITY SATELLITE · REAL NYC ARTERIAL ROAD NETWORK',
       corridors: [
         CachedRoadCorridor(
-          id: 'broadway_north',
-          name: 'Broadway & W 47th St Real Road',
+          id: 'nyc_nw',
+          name: 'Broadway & Upper West Highway',
           waypoints: [
-            projectLatLngToSector(40.7624, -73.9850, 40.7580, -73.9855),
-            projectLatLngToSector(40.7610, -73.9853, 40.7580, -73.9855),
-            projectLatLngToSector(40.7598, -73.9854, 40.7580, -73.9855),
+            projectLatLngToSector(40.7624, -73.9912, 40.7580, -73.9855),
+            projectLatLngToSector(40.7610, -73.9885, 40.7580, -73.9855),
+            projectLatLngToSector(40.7595, -73.9870, 40.7580, -73.9855),
             projectLatLngToSector(40.7580, -73.9855, 40.7580, -73.9855),
           ],
         ),
         CachedRoadCorridor(
-          id: 'eighth_ave_west',
-          name: '8th Ave -> W 44th St Real Road',
+          id: 'nyc_ne',
+          name: '5th Ave & Madison Ave Arterial',
           waypoints: [
-            projectLatLngToSector(40.7605, -73.9912, 40.7580, -73.9855),
-            projectLatLngToSector(40.7591, -73.9892, 40.7580, -73.9855),
-            projectLatLngToSector(40.7591, -73.9873, 40.7580, -73.9855),
+            projectLatLngToSector(40.7622, -73.9788, 40.7580, -73.9855),
+            projectLatLngToSector(40.7604, -73.9812, 40.7580, -73.9855),
+            projectLatLngToSector(40.7592, -73.9834, 40.7580, -73.9855),
             projectLatLngToSector(40.7580, -73.9855, 40.7580, -73.9855),
           ],
         ),
         CachedRoadCorridor(
-          id: 'sixth_ave_east',
-          name: 'Ave of the Americas -> W 46th St',
+          id: 'nyc_se',
+          name: 'Park Ave & E 42nd St Corridor',
           waypoints: [
-            projectLatLngToSector(40.7602, -73.9795, 40.7580, -73.9855),
-            projectLatLngToSector(40.7588, -73.9815, 40.7580, -73.9855),
-            projectLatLngToSector(40.7588, -73.9838, 40.7580, -73.9855),
+            projectLatLngToSector(40.7536, -73.9792, 40.7580, -73.9855),
+            projectLatLngToSector(40.7554, -73.9815, 40.7580, -73.9855),
+            projectLatLngToSector(40.7568, -73.9838, 40.7580, -73.9855),
+            projectLatLngToSector(40.7580, -73.9855, 40.7580, -73.9855),
+          ],
+        ),
+        CachedRoadCorridor(
+          id: 'nyc_sw',
+          name: '8th Ave & W 34th St Highway',
+          waypoints: [
+            projectLatLngToSector(40.7538, -73.9918, 40.7580, -73.9855),
+            projectLatLngToSector(40.7555, -73.9895, 40.7580, -73.9855),
+            projectLatLngToSector(40.7568, -73.9875, 40.7580, -73.9855),
             projectLatLngToSector(40.7580, -73.9855, 40.7580, -73.9855),
           ],
         ),
@@ -131,31 +143,98 @@ class HiveOfflineCacheDataSourceImpl implements LocalOfflineCacheDataSource {
     ),
     CitySectorModel(
       id: 'shibuya_crossing',
-      name: 'Shibuya Scramble Hub',
+      name: 'Tokyo Metropolis (Full Satellite Map)',
       city: 'Tokyo, Japan',
       latitude: 35.6595,
       longitude: 139.7004,
+      zoom: 14.0,
       cachedTimestampMs: 1730980000000,
-      tilePackageSizeKb: 5120,
-      threatRating: 'HIGH · REAL SHIBUYA 5-WAY ARTERIES',
+      tilePackageSizeKb: 6840,
+      threatRating: 'WHOLE CITY SATELLITE · REAL TOKYO METROPOLITAN HIGHWAYS',
       corridors: [
         CachedRoadCorridor(
-          id: 'dogenzaka',
-          name: 'Dogenzaka Real Corridor',
+          id: 'tokyo_nw',
+          name: 'Yoyogi & Inokashira-Dori Highway',
           waypoints: [
-            projectLatLngToSector(35.6582, 139.6952, 35.6595, 139.7004),
-            projectLatLngToSector(35.6587, 139.6972, 35.6595, 139.7004),
-            projectLatLngToSector(35.6591, 139.6989, 35.6595, 139.7004),
+            projectLatLngToSector(35.6634, 139.6952, 35.6595, 139.7004),
+            projectLatLngToSector(35.6615, 139.6975, 35.6595, 139.7004),
             projectLatLngToSector(35.6595, 139.7004, 35.6595, 139.7004),
           ],
         ),
         CachedRoadCorridor(
-          id: 'meiji_dori',
-          name: 'Meiji-Dori Real Street',
+          id: 'tokyo_ne',
+          name: 'Meiji-Dori & Harajuku Corridor',
           waypoints: [
-            projectLatLngToSector(35.6612, 139.7058, 35.6595, 139.7004),
-            projectLatLngToSector(35.6604, 139.7038, 35.6595, 139.7004),
+            projectLatLngToSector(35.6632, 139.7058, 35.6595, 139.7004),
+            projectLatLngToSector(35.6612, 139.7032, 35.6595, 139.7004),
             projectLatLngToSector(35.6595, 139.7004, 35.6595, 139.7004),
+          ],
+        ),
+        CachedRoadCorridor(
+          id: 'tokyo_se',
+          name: 'Roppongi-Dori & Shibuya River Road',
+          waypoints: [
+            projectLatLngToSector(35.6556, 139.7058, 35.6595, 139.7004),
+            projectLatLngToSector(35.6576, 139.7030, 35.6595, 139.7004),
+            projectLatLngToSector(35.6595, 139.7004, 35.6595, 139.7004),
+          ],
+        ),
+        CachedRoadCorridor(
+          id: 'tokyo_sw',
+          name: 'Tamagawa-Dori Route 246 Highway',
+          waypoints: [
+            projectLatLngToSector(35.6558, 139.6948, 35.6595, 139.7004),
+            projectLatLngToSector(35.6578, 139.6976, 35.6595, 139.7004),
+            projectLatLngToSector(35.6595, 139.7004, 35.6595, 139.7004),
+          ],
+        ),
+      ],
+    ),
+    CitySectorModel(
+      id: 'london_piccadilly',
+      name: 'London City (Full Satellite Map)',
+      city: 'London, United Kingdom',
+      latitude: 51.5101,
+      longitude: -0.1342,
+      zoom: 14.0,
+      cachedTimestampMs: 1730980000000,
+      tilePackageSizeKb: 6150,
+      threatRating: 'WHOLE CITY SATELLITE · REAL LONDON ARTERIAL ROADS',
+      corridors: [
+        CachedRoadCorridor(
+          id: 'lon_nw',
+          name: 'Regent St & Oxford Circus Artery',
+          waypoints: [
+            projectLatLngToSector(51.5142, -0.1408, 51.5101, -0.1342),
+            projectLatLngToSector(51.5122, -0.1376, 51.5101, -0.1342),
+            projectLatLngToSector(51.5101, -0.1342, 51.5101, -0.1342),
+          ],
+        ),
+        CachedRoadCorridor(
+          id: 'lon_ne',
+          name: 'Shaftesbury Ave & Soho Road',
+          waypoints: [
+            projectLatLngToSector(51.5140, -0.1278, 51.5101, -0.1342),
+            projectLatLngToSector(51.5120, -0.1310, 51.5101, -0.1342),
+            projectLatLngToSector(51.5101, -0.1342, 51.5101, -0.1342),
+          ],
+        ),
+        CachedRoadCorridor(
+          id: 'lon_se',
+          name: 'Haymarket & Trafalgar Highway',
+          waypoints: [
+            projectLatLngToSector(51.5062, -0.1282, 51.5101, -0.1342),
+            projectLatLngToSector(51.5082, -0.1312, 51.5101, -0.1342),
+            projectLatLngToSector(51.5101, -0.1342, 51.5101, -0.1342),
+          ],
+        ),
+        CachedRoadCorridor(
+          id: 'lon_sw',
+          name: 'Piccadilly & Green Park Road',
+          waypoints: [
+            projectLatLngToSector(51.5064, -0.1412, 51.5101, -0.1342),
+            projectLatLngToSector(51.5084, -0.1378, 51.5101, -0.1342),
+            projectLatLngToSector(51.5101, -0.1342, 51.5101, -0.1342),
           ],
         ),
       ],
@@ -240,12 +319,12 @@ class HiveOfflineCacheDataSourceImpl implements LocalOfflineCacheDataSource {
     final corridors = <CachedRoadCorridor>[];
 
     // Query free OpenStreetMap OSRM router (`https://router.project-osrm.org`)
-    // to trace real streets from 4 perimeter origins into HQ without any API key
+    // to trace real city roads from 4 outer quadrants into the starting Square HQ Zone
     final offsets = [
-      {'id': 'nw', 'name': 'NW Real Street (OSM)', 'dLat': 0.0042, 'dLng': -0.0048},
-      {'id': 'ne', 'name': 'NE Real Street (OSM)', 'dLat': 0.0038, 'dLng': 0.0052},
-      {'id': 'se', 'name': 'SE Real Street (OSM)', 'dLat': -0.0042, 'dLng': 0.0045},
-      {'id': 'sw', 'name': 'SW Real Street (OSM)', 'dLat': -0.0038, 'dLng': -0.0050},
+      {'id': 'nw', 'name': 'NW Real City Highway (OSM)', 'dLat': 0.0042, 'dLng': -0.0048},
+      {'id': 'ne', 'name': 'NE Real City Highway (OSM)', 'dLat': 0.0038, 'dLng': 0.0052},
+      {'id': 'se', 'name': 'SE Real City Highway (OSM)', 'dLat': -0.0042, 'dLng': 0.0045},
+      {'id': 'sw', 'name': 'SW Real City Highway (OSM)', 'dLat': -0.0038, 'dLng': -0.0050},
     ];
 
     for (final off in offsets) {
@@ -293,7 +372,7 @@ class HiveOfflineCacheDataSourceImpl implements LocalOfflineCacheDataSource {
       corridors.addAll([
         CachedRoadCorridor(
           id: 'north_artery',
-          name: 'Northern Urban Street',
+          name: 'Northern City Highway',
           waypoints: [
             projectLatLngToSector(
               latitude + 0.0044,
@@ -318,7 +397,7 @@ class HiveOfflineCacheDataSourceImpl implements LocalOfflineCacheDataSource {
         ),
         CachedRoadCorridor(
           id: 'east_boulevard',
-          name: 'Eastern Transit Road',
+          name: 'Eastern City Highway',
           waypoints: [
             projectLatLngToSector(
               latitude + 0.0028,
@@ -346,20 +425,21 @@ class HiveOfflineCacheDataSourceImpl implements LocalOfflineCacheDataSource {
 
     return CitySectorModel(
       id: 'sector_${(latitude * 1000).round()}_${(longitude * 1000).round()}',
-      name: name,
+      name: '$name (Full Satellite Map)',
       city: city,
       latitude: latitude,
       longitude: longitude,
+      zoom: 14.0,
       cachedTimestampMs: DateTime.now().millisecondsSinceEpoch,
-      tilePackageSizeKb: 4200,
-      threatRating: 'OSRM OPENSTREETMAP · REAL STREET GEOMETRY',
+      tilePackageSizeKb: 6400,
+      threatRating: 'WHOLE CITY SATELLITE · REAL OSRM ROAD NETWORK',
       corridors: corridors,
     );
   }
 
   @override
   Future<CommanderWalletEntity> getWallet() async {
-    final scrap = economyBox.get('tacticalScrap', defaultValue: 320) as int;
+    final scrap = economyBox.get('tacticalScrap', defaultValue: 420) as int;
     final gems = economyBox.get('bioCoreGems', defaultValue: 350) as int;
     final best = economyBox.get('bestScore', defaultValue: 0) as int;
     final rawLevels = economyBox.get('upgradeLevels') as Map<dynamic, dynamic>?;

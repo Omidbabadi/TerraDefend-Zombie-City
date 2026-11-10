@@ -348,71 +348,71 @@ export function getPerimeterRoadSpawnOrigins(
 export const PRESET_CITY_SECTORS: CitySector[] = [
   {
     id: 'manhattan_midtown',
-    name: 'Midtown Grid Sector 04',
+    name: 'New York City (Full Satellite Map)',
     city: 'New York, USA',
     lat: 40.758,
     lng: -73.9855,
-    zoom: 16,
+    zoom: 15,
     cachedAt: 1730980000000,
     tileSizeKb: 4280,
-    threatRating: 'MODERATE · REAL MANHATTAN STREET GRID',
+    threatRating: 'SATELLITE CITY MAP · REAL NYC ROAD NETWORK',
     realRoadSynced: true,
     roads: [
       convertLatLngPathToSectorRoad(
-        'broadway_north',
-        'Broadway & W 47th St Real Road',
+        'broadway_nw',
+        'Broadway & West Side Hwy (NW Artery)',
         [
-          { lat: 40.7624, lng: -73.9850 },
-          { lat: 40.7610, lng: -73.9853 },
-          { lat: 40.7598, lng: -73.9854 },
+          { lat: 40.7620, lng: -73.9932 },
+          { lat: 40.7608, lng: -73.9902 },
+          { lat: 40.7598, lng: -73.9875 },
           { lat: 40.7589, lng: -73.9855 },
           { lat: 40.7580, lng: -73.9855 },
         ],
         40.758,
         -73.9855,
-        510
+        1420
       ),
       convertLatLngPathToSectorRoad(
-        'eighth_ave_west',
-        '8th Ave -> W 44th St Real Road',
+        'fdr_ne',
+        'FDR Drive & Lexington Ave (NE Artery)',
         [
-          { lat: 40.7605, lng: -73.9912 },
-          { lat: 40.7591, lng: -73.9892 },
-          { lat: 40.7591, lng: -73.9873 },
-          { lat: 40.7584, lng: -73.9862 },
+          { lat: 40.7620, lng: -73.9775 },
+          { lat: 40.7605, lng: -73.9802 },
+          { lat: 40.7592, lng: -73.9825 },
+          { lat: 40.7584, lng: -73.9842 },
           { lat: 40.7580, lng: -73.9855 },
         ],
         40.758,
         -73.9855,
-        640
+        1380
       ),
       convertLatLngPathToSectorRoad(
-        'sixth_ave_east',
-        'Ave of the Americas -> W 46th St Real Road',
+        'queens_midtown_se',
+        '3rd Ave & E 34th St (SE Artery)',
         [
-          { lat: 40.7602, lng: -73.9795 },
-          { lat: 40.7588, lng: -73.9815 },
-          { lat: 40.7588, lng: -73.9838 },
-          { lat: 40.7582, lng: -73.9848 },
+          { lat: 40.7540, lng: -73.9775 },
+          { lat: 40.7556, lng: -73.9802 },
+          { lat: 40.7574, lng: -73.9818 },
+          { lat: 40.7578, lng: -73.9838 },
           { lat: 40.7580, lng: -73.9855 },
         ],
         40.758,
         -73.9855,
-        590
+        1460
       ),
       convertLatLngPathToSectorRoad(
-        'seventh_ave_south',
-        '7th Ave -> W 42nd St Real Road',
+        'lincoln_sw',
+        '9th Ave & W 34th St (SW Artery)',
         [
-          { lat: 40.7535, lng: -73.9882 },
-          { lat: 40.7552, lng: -73.9868 },
-          { lat: 40.7564, lng: -73.9862 },
-          { lat: 40.7573, lng: -73.9858 },
+          { lat: 40.7540, lng: -73.9932 },
+          { lat: 40.7554, lng: -73.9904 },
+          { lat: 40.7566, lng: -73.9882 },
+          { lat: 40.7574, lng: -73.9866 },
           { lat: 40.7580, lng: -73.9855 },
         ],
         40.758,
         -73.9855,
-        540
+        1390
       ),
     ],
     blocks: [
@@ -424,14 +424,14 @@ export const PRESET_CITY_SECTORS: CitySector[] = [
   },
   {
     id: 'shibuya_crossing',
-    name: 'Shibuya Scramble Hub',
+    name: 'Tokyo Metropolis (Full Satellite Map)',
     city: 'Tokyo, Japan',
     lat: 35.6595,
     lng: 139.7004,
-    zoom: 16,
+    zoom: 15,
     cachedAt: 1730980000000,
     tileSizeKb: 5120,
-    threatRating: 'HIGH · REAL SHIBUYA 5-WAY ARTERIES',
+    threatRating: 'SATELLITE CITY MAP · REAL TOKYO ARTERIAL ROADS',
     realRoadSynced: true,
     roads: [
       convertLatLngPathToSectorRoad(
@@ -495,14 +495,14 @@ export const PRESET_CITY_SECTORS: CitySector[] = [
   },
   {
     id: 'london_soho',
-    name: 'Piccadilly & Soho Bastion',
+    name: 'London City (Full Satellite Map)',
     city: 'London, UK',
     lat: 51.5101,
     lng: -0.134,
-    zoom: 16,
+    zoom: 15,
     cachedAt: null,
     tileSizeKb: 3890,
-    threatRating: 'EXTREME · REAL REGENT & SHAFTESBURY ROADS',
+    threatRating: 'SATELLITE CITY MAP · REAL LONDON ROAD NETWORK',
     realRoadSynced: true,
     roads: [
       convertLatLngPathToSectorRoad(
@@ -670,8 +670,8 @@ export function isPointInsideCapturedZone(
   if (!zones || zones.length === 0) return true;
   for (const z of zones) {
     if (z.status === 'captured') {
-      const d = Math.hypot(normX - z.x, normY - z.y);
-      if (d <= z.radius) return true;
+      const squareDist = Math.max(Math.abs(normX - z.x), Math.abs(normY - z.y));
+      if (squareDist <= z.radius) return true;
     }
   }
   return false;
@@ -765,16 +765,80 @@ export interface TerritoryCircle {
   label: string;
   x: number;
   y: number;
-  radius: number;
+  radius: number; // Half-width / half-height of the SQUARE zone
   isHq: boolean;
 }
 
+export interface TrainableUnitBlueprint {
+  id: 'soldier' | 'heavy_vehicle';
+  name: string;
+  costScrap: number;
+  requiredBuildingId: DeployableId;
+  requiredBuildingName: string;
+  roleClue: string;
+}
+
+export const TRAINABLE_UNITS: Record<'soldier' | 'heavy_vehicle', TrainableUnitBlueprint> = {
+  soldier: {
+    id: 'soldier',
+    name: 'Rifle Soldier Squad',
+    costScrap: 75,
+    requiredBuildingId: 'infantry_barracks',
+    requiredBuildingName: 'Infantry Barracks',
+    roleClue: 'Mobile Infantry · 125 HP · Assault Rifle',
+  },
+  heavy_vehicle: {
+    id: 'heavy_vehicle',
+    name: 'Heavy Siege Tank',
+    costScrap: 130,
+    requiredBuildingId: 'vehicle_factory',
+    requiredBuildingName: 'Heavy Vehicle Factory',
+    roleClue: 'Armored Tank · 380 HP · Splash Cannon',
+  },
+};
+
+export function canTrainUnit(
+  unitType: 'soldier' | 'heavy_vehicle',
+  scrap: number,
+  builtCountsByType: Partial<Record<DeployableId, number>>
+): {
+  allowed: boolean;
+  unlocked: boolean;
+  costScrap: number;
+  reason?: string;
+} {
+  const unit = TRAINABLE_UNITS[unitType];
+  const producerCount = builtCountsByType[unit.requiredBuildingId] ?? 0;
+  const unlocked = producerCount > 0;
+  if (!unlocked) {
+    return {
+      allowed: false,
+      unlocked: false,
+      costScrap: unit.costScrap,
+      reason: `LOCKED — BUILD ${unit.requiredBuildingName.toUpperCase()} FIRST`,
+    };
+  }
+  if (scrap < unit.costScrap) {
+    return {
+      allowed: false,
+      unlocked: true,
+      costScrap: unit.costScrap,
+      reason: `NEED ${unit.costScrap} SCRAP`,
+    };
+  }
+  return {
+    allowed: true,
+    unlocked: true,
+    costScrap: unit.costScrap,
+  };
+}
+
 /**
- * Returns all active Player-Controlled territory circles across the map:
- * - Primary HQ Command Base at (0.5, 0.5) (radius 0.28)
- * - Every built Forward HQ Base ('forward_hq') (radius 0.30 + level bonus)
- * - Every built Heavy Fortress ('fortress') (radius 0.16 + level bonus)
- * The union of these circles is Player-Controlled Area; the entire remaining map is Zombie-Controlled Area.
+ * Returns all active Player-Controlled SQUARE territory zones across the map:
+ * - Primary HQ Command Base at (0.5, 0.5) (square half-width 0.25)
+ * - Every built Forward HQ Base ('forward_hq') (square half-width 0.28 + level bonus)
+ * Note: ONLY HQs gain Player-Controlled Map Zones! Heavy Fortresses ('fortress')
+ * have square defensive firing zones around them, but do not expand map control.
  */
 export function getPlayerTerritoryCircles(
   towers: {
@@ -783,53 +847,48 @@ export function getPlayerTerritoryCircles(
     x: number;
     y: number;
     level?: number;
+    hp?: number;
+    buildProgress?: number;
     controlRadius?: number;
   }[],
   primaryHqAlive = true
 ): TerritoryCircle[] {
-  const circles: TerritoryCircle[] = [];
+  const squares: TerritoryCircle[] = [];
   if (primaryHqAlive) {
-    circles.push({
+    squares.push({
       id: 'primary_hq',
       label: 'PRIMARY HQ COMMAND',
       x: 0.5,
       y: 0.5,
-      radius: 0.28,
+      radius: 0.25,
       isHq: true,
     });
   }
 
   let hqIdx = 2;
-  let fortIdx = 1;
   for (const t of towers) {
+    const alive = t.hp === undefined || t.hp > 0;
+    const built = t.buildProgress === undefined || t.buildProgress >= 1;
+    if (!alive || !built) continue;
+
     if (t.blueprintId === 'forward_hq') {
       const lvl = t.level ?? 1;
-      circles.push({
+      squares.push({
         id: `forward_hq_${t.id ?? hqIdx}`,
         label: `FORWARD HQ 0${hqIdx++}`,
         x: t.x,
         y: t.y,
-        radius: (t.controlRadius ?? 0.30) + (lvl - 1) * 0.025,
+        radius: (t.controlRadius ?? 0.28) + (lvl - 1) * 0.025,
         isHq: true,
-      });
-    } else if (t.blueprintId === 'fortress') {
-      const lvl = t.level ?? 1;
-      circles.push({
-        id: `fortress_${t.id ?? fortIdx}`,
-        label: `FORTRESS 0${fortIdx++}`,
-        x: t.x,
-        y: t.y,
-        radius: (t.controlRadius ?? 0.16) + (lvl - 1) * 0.018,
-        isHq: false,
       });
     }
   }
-  return circles;
+  return squares;
 }
 
 /**
  * Computes the percentage of the entire city map controlled by the Player vs. Zombies.
- * Samples a 20x20 grid over the map. Building more Forward HQs & Heavy Fortresses
+ * Samples a 20x20 grid over the map using SQUARE HQ zones. Building more Forward HQs
  * expands Player-Controlled Area until reaching 100% Full Map Liberation.
  */
 export function calculateMapControlPercentage(
@@ -839,6 +898,8 @@ export function calculateMapControlPercentage(
     x: number;
     y: number;
     level?: number;
+    hp?: number;
+    buildProgress?: number;
     controlRadius?: number;
   }[],
   primaryHqAlive = true
@@ -847,9 +908,9 @@ export function calculateMapControlPercentage(
   zombiePercent: number;
   hqCount: number;
 } {
-  const circles = getPlayerTerritoryCircles(towers, primaryHqAlive);
-  const hqCount = circles.filter((c) => c.isHq).length;
-  if (circles.length === 0) {
+  const squares = getPlayerTerritoryCircles(towers, primaryHqAlive);
+  const hqCount = squares.length;
+  if (squares.length === 0) {
     return { playerPercent: 0, zombiePercent: 100, hqCount: 0 };
   }
 
@@ -862,8 +923,8 @@ export function calculateMapControlPercentage(
     for (let gy = 0; gy < gridN; gy++) {
       const py = 0.06 + (gy / (gridN - 1)) * 0.88;
       let inside = false;
-      for (const c of circles) {
-        if (Math.hypot(px - c.x, py - c.y) <= c.radius) {
+      for (const c of squares) {
+        if (Math.max(Math.abs(px - c.x), Math.abs(py - c.y)) <= c.radius) {
           inside = true;
           break;
         }
@@ -873,8 +934,8 @@ export function calculateMapControlPercentage(
   }
 
   const rawRatio = controlledCells / totalCells;
-  // Normalize so ~84% physical circle coverage across the rectangular viewport = 100% Map Liberation
-  const playerPercent = Math.min(100, Math.round((rawRatio / 0.84) * 100));
+  // Normalize so ~88% physical square coverage across the viewport = 100% Map Liberation
+  const playerPercent = Math.min(100, Math.round((rawRatio / 0.88) * 100));
   return {
     playerPercent,
     zombiePercent: Math.max(0, 100 - playerPercent),
@@ -883,7 +944,7 @@ export function calculateMapControlPercentage(
 }
 
 /**
- * Checks whether a normalized map coordinate (normX, normY) is inside Player-Controlled Area
+ * Checks whether a normalized map coordinate (normX, normY) is inside Player-Controlled SQUARE Area
  * or secured by nearby friendly Soldiers / Heavy Vehicles.
  */
 export function isPointInPlayerControlledArea(
@@ -895,13 +956,15 @@ export function isPointInPlayerControlledArea(
     x: number;
     y: number;
     level?: number;
+    hp?: number;
+    buildProgress?: number;
     controlRadius?: number;
   }[],
   troops: { x: number; y: number }[] = [],
   blueprintId?: DeployableId
 ): boolean {
-  const circles = getPlayerTerritoryCircles(towers, true);
-  // Forward HQs and Heavy Fortresses can be built on the frontline border (+0.15 expansion reach)
+  const squares = getPlayerTerritoryCircles(towers, true);
+  // Forward HQs and Heavy Fortresses can be built on the frontline border (+0.16 expansion reach)
   const expansionBonus =
     blueprintId === 'forward_hq'
       ? 0.16
@@ -909,8 +972,11 @@ export function isPointInPlayerControlledArea(
       ? 0.10
       : 0;
 
-  for (const c of circles) {
-    if (Math.hypot(normX - c.x, normY - c.y) <= c.radius + expansionBonus) {
+  for (const c of squares) {
+    if (
+      Math.max(Math.abs(normX - c.x), Math.abs(normY - c.y)) <=
+      c.radius + expansionBonus
+    ) {
       return true;
     }
   }
@@ -920,7 +986,7 @@ export function isPointInPlayerControlledArea(
   const unitVanguardRadius =
     blueprintId === 'forward_hq' || blueprintId === 'fortress' ? 0.18 : 0.12;
   for (const u of troops) {
-    if (Math.hypot(normX - u.x, normY - u.y) <= unitVanguardRadius) {
+    if (Math.max(Math.abs(normX - u.x), Math.abs(normY - u.y)) <= unitVanguardRadius) {
       return true;
     }
   }
@@ -929,34 +995,43 @@ export function isPointInPlayerControlledArea(
 }
 
 /**
- * Generates a 360-degree zombie spawn coordinate coming from every direction around the map
- * perimeter (outside Player-Controlled Area), ensuring zombies swarm from all directions.
+ * Generates a 360-degree zombie spawn coordinate on the outer entries of the city's real roads
+ * across all 4 quadrants, ensuring zombies enter from all directions and strictly follow real roads.
  */
 export function create360ZombieSpawnPoint(
   spawnIndex: number,
   _totalInWave: number,
   sector: CitySector
 ): { x: number; y: number; roadIndex: number } {
-  // Cycle through all 8 compass directions (N, NE, E, SE, S, SW, W, NW) with slight ring offset
+  if (sector.roads.length > 0) {
+    const roadIndex = spawnIndex % sector.roads.length;
+    const road = sector.roads[roadIndex];
+    if (road.points.length >= 2) {
+      const p0 = road.points[0];
+      const p1 = road.points[1];
+      // Stagger slightly along the initial real road segment [0..0.22] so zombies stay 100% on the road
+      const staggerT = ((Math.floor(spawnIndex / sector.roads.length) % 4) * 0.05);
+      const x = Number((p0.x + (p1.x - p0.x) * staggerT).toFixed(4));
+      const y = Number((p0.y + (p1.y - p0.y) * staggerT).toFixed(4));
+      return { x, y, roadIndex };
+    }
+    if (road.points.length === 1) {
+      return { x: road.points[0].x, y: road.points[0].y, roadIndex };
+    }
+  }
+
   const sectorIdx = spawnIndex % 8;
-  const cycleOffset = Math.floor(spawnIndex / 8) * 0.18;
-  const angle = (sectorIdx * (Math.PI / 4) + cycleOffset) % (Math.PI * 2);
-  const edgeRadiusX = 0.46;
-  const edgeRadiusY = 0.43;
-  const x = Number(
-    Math.max(0.03, Math.min(0.97, 0.5 + Math.cos(angle) * edgeRadiusX)).toFixed(3)
-  );
-  const y = Number(
-    Math.max(0.05, Math.min(0.93, 0.5 + Math.sin(angle) * edgeRadiusY)).toFixed(3)
-  );
-  const roadIndex =
-    sector.roads.length > 0 ? spawnIndex % sector.roads.length : 0;
-  return { x, y, roadIndex };
+  const angle = sectorIdx * (Math.PI / 4);
+  return {
+    x: Number((0.5 + Math.cos(angle) * 0.44).toFixed(3)),
+    y: Number((0.5 + Math.sin(angle) * 0.42).toFixed(3)),
+    roadIndex: 0,
+  };
 }
 
 /**
  * Maximum number of static buildings the sector command power grid can support simultaneously.
- * Starts at 8 in the Primary HQ zone; each additional HQ Base or captured zone adds +4 Power Grid slots!
+ * Starts at 8 in the Primary HQ zone; each additional HQ Base or captured zone adds +3 Power Grid slots!
  */
 export function getMaxTowerSlots(
   upgrades: UpgradeStat[],
@@ -1000,6 +1075,147 @@ export function pointToSegmentDistance(
   return Math.hypot(px - projX, py - projY);
 }
 
+export interface RoadProjectionResult {
+  x: number;
+  y: number;
+  roadIndex: number;
+  segmentIndex: number;
+  segmentT: number;
+  distance: number;
+}
+
+/**
+ * Projects any normalized city coordinate (px, py) onto the closest point on the real road network.
+ * Used when a unit exits an off-road Barracks/Vehicle Factory onto the street, and when snapping
+ * player move orders onto real roads.
+ */
+export function projectPointToNearestRoad(
+  px: number,
+  py: number,
+  roads: CachedSectorRoad[]
+): RoadProjectionResult {
+  if (!roads || roads.length === 0) {
+    return {
+      x: px,
+      y: py,
+      roadIndex: 0,
+      segmentIndex: 0,
+      segmentT: 0,
+      distance: 0,
+    };
+  }
+
+  let bestX = px;
+  let bestY = py;
+  let bestRoadIdx = 0;
+  let bestSegIdx = 0;
+  let bestT = 0;
+  let bestDist = Infinity;
+
+  for (let rIdx = 0; rIdx < roads.length; rIdx++) {
+    const pts = roads[rIdx].points;
+    for (let sIdx = 0; sIdx < pts.length - 1; sIdx++) {
+      const p1 = pts[sIdx];
+      const p2 = pts[sIdx + 1];
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const lenSq = dx * dx + dy * dy;
+      const t =
+        lenSq === 0
+          ? 0
+          : Math.max(0, Math.min(1, ((px - p1.x) * dx + (py - p1.y) * dy) / lenSq));
+      const projX = p1.x + t * dx;
+      const projY = p1.y + t * dy;
+      const d = Math.hypot(px - projX, py - projY);
+      if (d < bestDist) {
+        bestDist = d;
+        bestX = projX;
+        bestY = projY;
+        bestRoadIdx = rIdx;
+        bestSegIdx = sIdx;
+        bestT = t;
+      }
+    }
+  }
+
+  return {
+    x: Number(bestX.toFixed(4)),
+    y: Number(bestY.toFixed(4)),
+    roadIndex: bestRoadIdx,
+    segmentIndex: bestSegIdx,
+    segmentT: Number(bestT.toFixed(4)),
+    distance: Number(bestDist.toFixed(4)),
+  };
+}
+
+/**
+ * Computes a strict real-road path for a Soldier Squad or Heavy Siege Tank from (startX, startY)
+ * to (targetX, targetY):
+ * 1. If the unit starts at an off-road producer building (Barracks / Vehicle Factory), its first
+ *    waypoint exits the building directly onto the nearest real road segment.
+ * 2. The unit then follows the real road vertices (and central road intersections if switching
+ *    arterial roads) to the point on the real road network closest to (targetX, targetY).
+ */
+export function computeRoadNetworkPath(
+  startX: number,
+  startY: number,
+  targetX: number,
+  targetY: number,
+  roads: CachedSectorRoad[]
+): { x: number; y: number }[] {
+  if (!roads || roads.length === 0) {
+    return [{ x: targetX, y: targetY }];
+  }
+
+  const startProj = projectPointToNearestRoad(startX, startY, roads);
+  const endProj = projectPointToNearestRoad(targetX, targetY, roads);
+  const rawWaypoints: { x: number; y: number }[] = [];
+
+  // Step 1: Exit off-road building (or current off-road position) onto the nearest real road
+  rawWaypoints.push({ x: startProj.x, y: startProj.y });
+
+  if (startProj.roadIndex === endProj.roadIndex) {
+    const pts = roads[startProj.roadIndex].points;
+    const posA = startProj.segmentIndex + startProj.segmentT;
+    const posB = endProj.segmentIndex + endProj.segmentT;
+
+    if (posA < posB) {
+      for (let i = startProj.segmentIndex + 1; i <= endProj.segmentIndex; i++) {
+        rawWaypoints.push({ x: pts[i].x, y: pts[i].y });
+      }
+    } else if (posA > posB) {
+      for (let i = startProj.segmentIndex; i >= endProj.segmentIndex + 1; i--) {
+        rawWaypoints.push({ x: pts[i].x, y: pts[i].y });
+      }
+    }
+  } else {
+    // Traverse along start road to the central road hub (last vertex of road), then outward along destination road
+    const ptsA = roads[startProj.roadIndex].points;
+    for (let i = startProj.segmentIndex + 1; i < ptsA.length; i++) {
+      rawWaypoints.push({ x: ptsA[i].x, y: ptsA[i].y });
+    }
+
+    const ptsB = roads[endProj.roadIndex].points;
+    for (let i = ptsB.length - 2; i >= endProj.segmentIndex + 1; i--) {
+      rawWaypoints.push({ x: ptsB[i].x, y: ptsB[i].y });
+    }
+  }
+
+  // Final point on the real road
+  rawWaypoints.push({ x: endProj.x, y: endProj.y });
+
+  // Deduplicate very close consecutive points
+  const cleaned: { x: number; y: number }[] = [];
+  for (const pt of rawWaypoints) {
+    const prev = cleaned[cleaned.length - 1];
+    if (!prev || Math.hypot(pt.x - prev.x, pt.y - prev.y) >= 0.004) {
+      cleaned.push(pt);
+    }
+  }
+
+  return cleaned.length > 0 ? cleaned : [{ x: endProj.x, y: endProj.y }];
+}
+
 /**
  * Enforces tactical city placement constraints for static buildings (Towers, Heavy Fortresses,
  * Scrap Refineries, Barracks, Vehicle Factories, and Forward HQ Bases):
@@ -1007,7 +1223,7 @@ export function pointToSegmentDistance(
  * 2. Must be inside Player-Controlled Area (or near frontline / friendly Soldiers & Vehicles)
  * 3. Safe viewport perimeter margin
  * 4. HQ Command Bunker center exclusion buffer
- * 5. Cannot build directly on real-world road asphalt (must build on curbs/rooftops/blocks)
+ * 5. Cannot build directly on real-world road asphalt (must build OUTSIDE of roads on blocks/lots)
  * 6. Minimum spacing between adjacent buildings (no stacking)
  */
 export function validateTowerPlacement(
@@ -1035,7 +1251,7 @@ export function validateTowerPlacement(
   }
 
   if (normX < 0.04 || normX > 0.96 || normY < 0.06 || normY > 0.92) {
-    return { valid: false, reason: 'OUTSIDE SECTOR PERIMETER' };
+    return { valid: false, reason: 'OUTSIDE CITY PERIMETER' };
   }
 
   // Check whole-map Player-Controlled Area (and optional legacy FortressZones if passed in tests)
@@ -1056,7 +1272,7 @@ export function validateTowerPlacement(
       valid: false,
       reason:
         blueprintId === 'forward_hq'
-          ? 'ZOMBIE AREA: MOVE SOLDIERS/VEHICLES HERE OR BUILD NEAR HQ BORDER'
+          ? 'ZOMBIE AREA: MOVE SOLDIERS/VEHICLES ON ROADS HERE OR BUILD NEAR HQ BORDER'
           : 'OUTSIDE PLAYER AREA: BUILD FORWARD HQ OR MOVE UNITS HERE FIRST',
     };
   }
@@ -1071,8 +1287,11 @@ export function validateTowerPlacement(
       const p1 = road.points[i];
       const p2 = road.points[i + 1];
       const dRoad = pointToSegmentDistance(normX, normY, p1.x, p1.y, p2.x, p2.y);
-      if (dRoad < 0.026) {
-        return { valid: false, reason: 'BLOCKED: STREET ASPHALT CORRIDOR' };
+      if (dRoad < 0.028) {
+        return {
+          valid: false,
+          reason: 'BLOCKED: REAL ROAD ASPHALT (PLACE BUILDINGS OUTSIDE ROADS)',
+        };
       }
     }
   }
@@ -1087,7 +1306,7 @@ export function validateTowerPlacement(
     }
   }
 
-  return { valid: true, reason: 'PLAYER TERRITORY SITE CLEAR' };
+  return { valid: true, reason: 'OFF-ROAD BUILDING SITE CLEAR' };
 }
 
 export function getEffectiveTowerStats(
@@ -1177,11 +1396,12 @@ export interface WaveDifficultyScaling {
 export function getWaveDifficultyScaling(waveNumber: number): WaveDifficultyScaling {
   const w = Math.max(1, waveNumber);
   const hpMultiplier = Number((Math.pow(1.22, w - 1) + (w - 1) * 0.2).toFixed(2));
-  const speedMultiplier = Number(Math.min(2.25, 1 + (w - 1) * 0.05).toFixed(2));
+  const speedMultiplier = Number(Math.min(2.25, 0.92 + (w - 1) * 0.05).toFixed(2));
   const damageMultiplier = Number((1 + (w - 1) * 0.15).toFixed(2));
-  const hostileCount = Math.round(11 + w * 4 + Math.floor(Math.pow(w, 1.38)));
+  // Start with a light Wave 1 (6 zombies) and scale progressively harder each wave
+  const hostileCount = Math.round(3 + w * 2 + Math.floor(Math.pow(w, 1.38)));
   const spawnIntervalSeconds = Number(
-    Math.max(0.18, 1.2 * Math.pow(0.9, w - 1)).toFixed(2)
+    Math.max(0.22, 2.1 * Math.pow(0.88, w - 1)).toFixed(2)
   );
 
   return {
@@ -1191,7 +1411,7 @@ export function getWaveDifficultyScaling(waveNumber: number): WaveDifficultyScal
     speedMultiplier,
     damageMultiplier,
     spawnIntervalSeconds,
-    waveClearScrapBonus: 36 + w * 14,
+    waveClearScrapBonus: 42 + w * 16,
     waveClearGemsBonus: 10 + Math.floor(w * 3),
   };
 }
@@ -1206,13 +1426,11 @@ export function createZombieWaveComposition(waveNumber: number): ZombieArchetype
     const juggernautMod = Math.max(3, 7 - Math.floor(w / 3));
     const spitterMod = Math.max(2, 5 - Math.floor(w / 4));
 
-    if (w >= 2 && i > 0 && i % juggernautMod === 0) {
+    if (w >= 3 && i > 0 && i % juggernautMod === 0) {
       list.push('juggernaut');
-    } else if (w >= 2 && i % spitterMod === 0) {
+    } else if (w >= 2 && i > 0 && i % spitterMod === 0) {
       list.push('spitter');
-    } else if (i % 2 === 0 && w >= 3) {
-      list.push('runner');
-    } else if (i % 3 === 0) {
+    } else if (w >= 2 && i % 3 === 0) {
       list.push('runner');
     } else {
       list.push('walker');
