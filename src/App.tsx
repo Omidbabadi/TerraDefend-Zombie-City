@@ -27,6 +27,7 @@ import {
 } from './game/offlineCache';
 import { traceRealRoadsWithOSRM } from './game/osmService';
 import { soundEngine } from './game/audio';
+import { triggerAndroidHaptic } from './game/haptics';
 import {
   HudSyncPayload,
   TacticalBattleCanvas,
@@ -34,10 +35,10 @@ import {
 import { OpenStreetMapView } from './components/OpenStreetMapView';
 import { SectorMapModal } from './components/SectorMapModal';
 import { StoreArmoryModal } from './components/StoreArmoryModal';
-import { FlutterCodeModal } from './components/FlutterCodeModal';
+import { AndroidStudioModal } from './components/AndroidStudioModal';
+import { PWAInstallButton } from './components/PWAInstallButton';
 
 export default function App() {
-  // Game Screen State Machine
   const [gameState, setGameState] = useState<GameScreenState>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -50,14 +51,14 @@ export default function App() {
 
   const syncedSectorIdRef = useRef<string | null>(null);
 
-  // Cached Sectors & Active City Sector
+  // Cached Sectors & Active City Satellite Map
   const [sectors, setSectors] = useState<CitySector[]>(() => loadCachedSectors());
   const [activeSector, setActiveSector] = useState<CitySector>(
     () => loadCachedSectors()[0]
   );
   const [isOfflineMode, setIsOfflineMode] = useState<boolean>(false);
 
-  // Economy & Permanent Upgrades (Start with 420 Scrap for Base Building & Territory Expansion)
+  // Economy & Permanent Upgrades
   const [scrap, setScrap] = useState<number>(420);
   const [gems, setGems] = useState<number>(() => loadPersistedEconomy().gems);
   const [bestScore, setBestScore] = useState<number>(
@@ -70,7 +71,10 @@ export default function App() {
     () => loadPersistedEconomy().upgrades
   );
 
-  // Tactical Dock Tab & Selection Signals
+  // Android Touch Action Mode & 4-Tab Dock State
+  const [touchActionMode, setTouchActionMode] = useState<'build' | 'move_units'>(
+    'build'
+  );
   const [activeDockTab, setActiveDockTab] = useState<
     'defensive' | 'economy' | 'military' | 'units'
   >('defensive');
@@ -93,9 +97,10 @@ export default function App() {
   const [upgradeTowerSignal, setUpgradeTowerSignal] = useState<number>(0);
   const [repairTowerSignal, setRepairTowerSignal] = useState<number>(0);
   const [sellTowerSignal, setSellTowerSignal] = useState<number>(0);
+  const [deselectTowerSignal, setDeselectTowerSignal] = useState<number>(0);
   const [muted, setMuted] = useState<boolean>(false);
 
-  // Throttled HUD State from Canvas Simulation
+  // Throttled HUD State from 60 FPS Canvas Simulation
   const [hudState, setHudState] = useState<HudSyncPayload>(() => ({
     baseHp: 1000,
     baseMaxHp: 1000,
@@ -132,18 +137,17 @@ export default function App() {
     statusAlert: null,
   }));
 
-  // Modals
+  // Sheets & Modals
   const [isSectorModalOpen, setIsSectorModalOpen] = useState<boolean>(false);
   const [isStoreModalOpen, setIsStoreModalOpen] = useState<boolean>(false);
-  const [isFlutterModalOpen, setIsFlutterModalOpen] = useState<boolean>(false);
+  const [isAndroidStudioModalOpen, setIsAndroidStudioModalOpen] =
+    useState<boolean>(false);
   const [runSnapshot, setRunSnapshot] = useState<RunSnapshot | null>(null);
 
-  // Sync document.body.dataset.state
   useEffect(() => {
     document.body.dataset.state = gameState;
   }, [gameState]);
 
-  // Persist economy whenever gems, bestScore, bestWave, or upgrades change
   useEffect(() => {
     const updatedBestWave = Math.max(bestWave, hudState.wave);
     if (updatedBestWave !== bestWave) {
@@ -162,8 +166,10 @@ export default function App() {
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
+    triggerAndroidHaptic('deploy');
     setRunSnapshot(null);
     setScrap(420);
+    setTouchActionMode('build');
     setResetSignal((n) => n + 1);
     setGameState('playing');
   }, []);
@@ -172,18 +178,21 @@ export default function App() {
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
+    triggerAndroidHaptic('deploy');
     setRunSnapshot(null);
     setScrap(420);
+    setTouchActionMode('build');
     setResetSignal((n) => n + 1);
     setGameState('playing');
   }, []);
 
-  // Global keyboard shortcuts (1-9 buildings/abilities, M Command Army, Enter/Space start, P/Esc pause, R restart)
+  // Keyboard shortcuts for Android hardware keyboards / Chromebooks / desktop testing
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
       ) {
         return;
       }
@@ -193,7 +202,7 @@ export default function App() {
           (e.key === 'Enter' || e.key === ' ') &&
           !isSectorModalOpen &&
           !isStoreModalOpen &&
-          !isFlutterModalOpen
+          !isAndroidStudioModalOpen
         ) {
           e.preventDefault();
           handleStartGame();
@@ -204,42 +213,56 @@ export default function App() {
       if (e.key === '1') {
         setActiveDockTab('defensive');
         setSelectedDeployable('rotary_turret');
+        setTouchActionMode('build');
       } else if (e.key === '2') {
         setActiveDockTab('defensive');
         setSelectedDeployable('sniper_nest');
+        setTouchActionMode('build');
       } else if (e.key === '3') {
         setActiveDockTab('defensive');
         setSelectedDeployable('emp_pylon');
+        setTouchActionMode('build');
       } else if (e.key === '4') {
         setActiveDockTab('defensive');
         setSelectedDeployable('fortress');
+        setTouchActionMode('build');
       } else if (e.key === '5') {
         setActiveDockTab('economy');
         setSelectedDeployable('scrap_collector');
+        setTouchActionMode('build');
       } else if (e.key === '6') {
         setActiveDockTab('military');
         setSelectedDeployable('infantry_barracks');
+        setTouchActionMode('build');
       } else if (e.key === '7') {
         setActiveDockTab('military');
         setSelectedDeployable('vehicle_factory');
+        setTouchActionMode('build');
       } else if (e.key === '8') {
         setActiveDockTab('economy');
         setSelectedDeployable('forward_hq');
+        setTouchActionMode('build');
       } else if (e.key === '9') {
         setActiveDockTab('military');
         setSelectedDeployable('airstrike');
+        setTouchActionMode('build');
       } else if (e.key === 'm' || e.key === 'M') {
         setActiveDockTab('units');
         setSelectedDeployable('unit_command');
+        setTouchActionMode('move_units');
         setUnitSelectFilterSignal((prev) => ({
           filter: 'all',
           seq: (prev?.seq || 0) + 1,
         }));
       } else if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
-        if (isSectorModalOpen || isStoreModalOpen || isFlutterModalOpen) {
+        if (
+          isSectorModalOpen ||
+          isStoreModalOpen ||
+          isAndroidStudioModalOpen
+        ) {
           setIsSectorModalOpen(false);
           setIsStoreModalOpen(false);
-          setIsFlutterModalOpen(false);
+          setIsAndroidStudioModalOpen(false);
           return;
         }
         setGameState((prev) =>
@@ -258,7 +281,7 @@ export default function App() {
     gameState,
     isSectorModalOpen,
     isStoreModalOpen,
-    isFlutterModalOpen,
+    isAndroidStudioModalOpen,
     handleStartGame,
     handleRestartGame,
   ]);
@@ -310,7 +333,6 @@ export default function App() {
     [handleCacheSector]
   );
 
-  // Automatically trace real street geometry via free OSRM OpenStreetMap routing if unsynced
   useEffect(() => {
     if (isOfflineMode || activeSector.realRoadSynced) return;
     if (syncedSectorIdRef.current === activeSector.id) return;
@@ -340,11 +362,13 @@ export default function App() {
   const handleSelectSector = useCallback((sector: CitySector) => {
     setActiveSector(sector);
     setScrap(420);
+    setTouchActionMode('build');
     setResetSignal((n) => n + 1);
   }, []);
 
   const handleBuyPack = useCallback((pack: StorePack) => {
     soundEngine.playDeploy();
+    triggerAndroidHaptic('deploy');
     setGems((prev) => prev + pack.gemsReward);
     setScrap((prev) => prev + pack.scrapReward);
   }, []);
@@ -359,6 +383,7 @@ export default function App() {
           setGems((g) => g - cost.gems);
           setScrap((s) => s - cost.scrap);
           soundEngine.playDeploy();
+          triggerAndroidHaptic('deploy');
           return { ...u, level: u.level + 1 };
         })
       );
@@ -368,6 +393,7 @@ export default function App() {
 
   const deployableList = Object.values(DEPLOYABLE_BLUEPRINTS);
   const hqWeaponStats = getHqDefenseWeaponStats(upgrades);
+  const totalArmyUnits = hudState.soldierCount + hudState.heavyVehicleCount;
   const selectedTowerStats = hudState.selectedTower
     ? getEffectiveTowerStats(
         hudState.selectedTower.blueprintId,
@@ -376,11 +402,21 @@ export default function App() {
       )
     : null;
 
+  const soldierTrainCheck = canTrainUnit(
+    'soldier',
+    scrap,
+    hudState.unitCountsByType
+  );
+  const tankTrainCheck = canTrainUnit(
+    'heavy_vehicle',
+    scrap,
+    hudState.unitCountsByType
+  );
+
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-slate-950 select-none flex flex-col">
-      {/* Main Viewport Stage */}
+    <main className="relative w-screen h-[100dvh] overflow-hidden bg-slate-950 select-none flex flex-col">
       <div className="relative flex-1 w-full h-full overflow-hidden">
-        {/* Underlying Free Live OpenStreetMap (high-visibility 95% opacity so streets load clearly in preview) */}
+        {/* Live Whole-City Satellite Map Layer */}
         {!isOfflineMode && (
           <div className="absolute inset-0 z-0 pointer-events-none opacity-95">
             <OpenStreetMapView
@@ -392,16 +428,17 @@ export default function App() {
           </div>
         )}
 
-        {/* 60 FPS Tactical Canvas Simulation & Whole-Map Territory Overlay */}
+        {/* 60 FPS Android Touch Canvas Simulation */}
         <TacticalBattleCanvas
           gameState={
-            isSectorModalOpen || isStoreModalOpen || isFlutterModalOpen
+            isSectorModalOpen || isStoreModalOpen || isAndroidStudioModalOpen
               ? 'paused'
               : gameState
           }
           activeSector={activeSector}
           isOfflineMode={isOfflineMode}
           selectedDeployable={selectedDeployable}
+          touchActionMode={touchActionMode}
           scrap={scrap}
           gems={gems}
           upgrades={upgrades}
@@ -417,358 +454,287 @@ export default function App() {
           upgradeTowerSignal={upgradeTowerSignal}
           repairTowerSignal={repairTowerSignal}
           sellTowerSignal={sellTowerSignal}
+          deselectTowerSignal={deselectTowerSignal}
         />
 
-        {/* ==================== TITLE SCREEN OVERLAY ==================== */}
+        {/* ==================== ANDROID LAUNCH SCREEN ==================== */}
         {gameState === 'title' && (
           <div
-            className="fixed inset-0 z-30 flex flex-col justify-between p-8 md:p-14"
+            className="fixed inset-0 z-30 flex flex-col justify-between p-5 sm:p-10 md:p-14"
             style={{
               background:
-                'linear-gradient(90deg, rgba(9,13,22,0.88) 0%, rgba(9,13,22,0.54) 44%, rgba(9,13,22,0.08) 100%)',
+                'linear-gradient(105deg, rgba(9,13,22,0.92) 0%, rgba(9,13,22,0.72) 52%, rgba(9,13,22,0.22) 100%)',
             }}
           >
-            {/* Top Minimal Status Strip */}
-            <div className="flex items-center justify-between text-xs text-slate-300 font-mono-tabular">
-              <div>
-                ACTIVE SECTOR:{' '}
+            {/* Top Android Status Telemetry */}
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300 font-mono-tabular">
+              <div className="truncate max-w-full">
+                ANDROID SATELLITE MAP:{' '}
                 <span className="text-slate-100 font-bold">
                   {activeSector.name}
                 </span>{' '}
-                · <span>{activeSector.city}</span> ·{' '}
-                <span className="text-emerald-400">
-                  {activeSector.cachedAt
-                    ? 'OPENSTREETMAP READY & CACHED'
-                    : 'LIVE OPENSTREETMAP'}
-                </span>
+                <span className="hidden sm:inline">· {activeSector.city}</span>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <span className="text-amber-400 font-bold">
-                  SCRAP: {Math.round(scrap)}
+                  SCRAP {Math.round(scrap)}
                 </span>
-                <span>·</span>
+                <span aria-hidden="true">·</span>
                 <span className="text-cyan-400 font-bold">
-                  BIO-GEMS: {Math.round(gems)}
+                  GEMS {Math.round(gems)}
                 </span>
               </div>
             </div>
 
-            {/* Left-Third Asymmetric Title Lockup & Primary Actions */}
+            {/* Android Game Crest & Launch Actions */}
             <div className="max-w-xl my-auto">
-              <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3.5 mb-3">
                 <svg
-                  width="48"
-                  height="48"
-                  viewBox="0 0 48 48"
+                  width="52"
+                  height="52"
+                  viewBox="0 0 52 52"
                   className="shrink-0"
                   aria-hidden="true"
                 >
-                  <polygon
-                    points="24,3 44,14 44,34 24,45 4,34 4,14"
-                    fill="#0f172a"
-                    stroke="#f59e0b"
+                  <rect
+                    x="3"
+                    y="3"
+                    width="46"
+                    height="46"
+                    rx="12"
+                    fill="#090d16"
+                    stroke="#22c55e"
                     strokeWidth="2.5"
                   />
-                  <circle
-                    cx="24"
-                    cy="24"
-                    r="11"
-                    fill="none"
+                  <path
+                    d="M8 26h36M26 8v36"
+                    stroke="#f59e0b"
+                    strokeWidth="2"
+                    strokeDasharray="4 3"
+                  />
+                  <rect
+                    x="18"
+                    y="18"
+                    width="16"
+                    height="16"
+                    rx="3"
+                    fill="#0f172a"
                     stroke="#38bdf8"
                     strokeWidth="2"
-                    strokeDasharray="5 3"
                   />
-                  <circle cx="24" cy="24" r="4.5" fill="#10b981" />
+                  <circle cx="26" cy="26" r="4" fill="#22c55e" />
                 </svg>
                 <div>
-                  <div className="text-xs font-mono-tabular tracking-widest text-amber-400 uppercase">
-                    Whole-City Satellite Map · Real-Road Units &amp; Off-Road Base Building
+                  <div className="text-[11px] sm:text-xs font-mono-tabular tracking-wider text-emerald-400 uppercase font-bold">
+                    Android Tactical Satellite Edition · Real-Road Combat
                   </div>
-                  <h1
-                    className="font-display text-5xl md:text-6xl font-bold tracking-tight text-slate-100 uppercase leading-none mt-1"
-                    style={{ textWrap: 'balance' }}
-                  >
+                  <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-slate-100 uppercase leading-none mt-1">
                     Sector Zero: City Map Defense
                   </h1>
                 </div>
               </div>
 
-              <p className="text-sm md:text-base text-slate-200 leading-relaxed max-w-lg">
-                Choose a whole city rendered on Satellite Maps, start in your central Square HQ Zone, and capture 100% of the city. Place buildings strictly outside of roads—when Soldiers or Heavy Tanks are trained, they exit their building onto the nearest real road and battle zombies exclusively along real city roads.
+              <p className="text-xs sm:text-sm md:text-base text-slate-200 leading-relaxed max-w-lg">
+                Command your central Square HQ Zone on real-world Satellite City
+                Maps and capture 100% of the city. Tap outside roads to construct
+                defenses, economy refineries, and military factories—trained
+                Soldiers and Heavy Tanks exit onto real roads to battle zombies.
               </p>
 
-              {/* Primary & Secondary CTAs (<= 3 menu actions) */}
-              <div className="flex flex-wrap items-center gap-3 mt-7">
+              {/* Primary & Secondary Android Touch CTAs */}
+              <div className="flex flex-wrap items-center gap-2.5 mt-6">
                 <button
                   type="button"
                   data-start="true"
                   onClick={handleStartGame}
-                  className="px-7 py-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-display text-xl font-bold tracking-wide uppercase rounded-lg shadow-lg transition-transform active:scale-95 whitespace-nowrap shrink-0"
+                  className="min-h-[48px] px-6 py-3 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-display text-lg sm:text-xl font-bold tracking-wide uppercase rounded-xl shadow-lg transition-transform whitespace-nowrap shrink-0"
                 >
-                  Deploy Base to {activeSector.name}
+                  Play Android Game
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setIsSectorModalOpen(true)}
-                  className="px-5 py-3.5 bg-slate-900/95 hover:bg-slate-800 text-slate-100 border border-slate-700 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
+                  className="min-h-[48px] px-4 py-3 bg-slate-900 hover:bg-slate-800 text-slate-100 border border-slate-700 text-xs font-semibold rounded-xl transition-colors whitespace-nowrap shrink-0"
                 >
-                  Choose Whole City (Satellite Map)
+                  Choose City Map
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setIsStoreModalOpen(true)}
-                  className="px-5 py-3.5 bg-slate-900/95 hover:bg-slate-800 text-cyan-300 border border-slate-700 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
+                  className="min-h-[48px] px-4 py-3 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700 text-xs font-semibold rounded-xl transition-colors whitespace-nowrap shrink-0"
                 >
-                  Armory & Currency Store
+                  Armory &amp; Store
                 </button>
+
+                <PWAInstallButton />
               </div>
 
-              <div className="mt-4">
+              <div className="mt-3.5">
                 <button
                   type="button"
-                  onClick={() => setIsFlutterModalOpen(true)}
-                  className="text-xs font-mono-tabular text-slate-300 hover:text-amber-400 underline transition-colors"
+                  onClick={() => setIsAndroidStudioModalOpen(true)}
+                  className="min-h-[44px] px-3.5 py-2 bg-slate-950/95 hover:bg-slate-900 border border-emerald-700/70 rounded-xl text-xs font-mono-tabular text-emerald-300 font-semibold transition-colors inline-flex items-center gap-2"
                 >
-                  Inspect Flutter Mobile SDK Code (`flutter_project/lib/main.dart`)
+                  <span>Android Studio Kotlin Project (/android_game)</span>
                 </button>
               </div>
             </div>
 
-            {/* Single Flat Inline Control Hint in Bottom Safe Margin */}
-            <div className="text-xs font-mono-tabular text-slate-300">
-              1–3 Towers · 4 Heavy Fortress · 5 Scrap Refinery · 6 Barracks · 7 Vehicle Factory · 8 Forward HQ · M / Right-Click Move Units
+            {/* Single Flat Inline Touch Control Hint */}
+            <div className="text-[11px] sm:text-xs font-mono-tabular text-slate-300">
+              Touch Controls: Tap Off-Road Lot to Build · Switch to [Move Units]
+              or Long-Press Map to Command Army Along Real Roads
             </div>
           </div>
         )}
 
-        {/* ==================== PLAYING HUD SHELL ==================== */}
+        {/* ==================== ANDROID PLAYING HUD ==================== */}
         {gameState !== 'title' && (
-          <div className="fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-3.5">
-            {/* Top Perimeter Clusters */}
-            <div className="flex items-start justify-between gap-3">
-              {/* Top-Left Cluster: Command Base Vitality & Sector Cache Status */}
-              <div className="pointer-events-auto bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-2.5 shadow-xl flex items-center gap-4">
+          <div className="fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-2 sm:p-3">
+            {/* Compact Single-Row Android Top Status Bar (48px height -> < 6% of 844px mobile height) */}
+            <div className="pointer-events-auto w-full bg-slate-950/95 border border-slate-800 rounded-2xl px-2.5 sm:px-4 h-12 flex items-center justify-between gap-2 shadow-xl">
+              {/* Left: HQ HP & Whole-City Square Control % */}
+              <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
                 <div>
-                  <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                    PRIMARY HQ INTEGRITY
-                  </div>
-                  <div className="flex items-baseline gap-2 mt-0.5">
-                    <span className="font-display text-3xl font-bold font-mono-tabular text-emerald-400 stroke-text">
-                      {Math.round(hudState.baseHp)}
+                  <div className="flex items-center gap-1.5 font-mono-tabular leading-none">
+                    <span className="text-[11px] sm:text-sm font-bold text-emerald-400">
+                      {Math.round(hudState.baseHp)} HP
                     </span>
-                    <span className="text-xs font-mono-tabular text-slate-400">
-                      / {hudState.baseMaxHp} HP ·{' '}
-                      <span className="text-amber-400">
-                        CANNON {hqWeaponStats.damage} DMG
-                      </span>
+                    <span className="text-slate-600">·</span>
+                    <span className="text-[11px] sm:text-sm font-bold text-sky-300">
+                      {hudState.playerControlPercent}% CITY
                     </span>
-                  </div>
-                  <div className="w-40 h-2 bg-slate-900 rounded-full overflow-hidden mt-1 border border-slate-800">
-                    <div
-                      className="h-full transition-transform duration-150 origin-left"
-                      style={{
-                        backgroundColor:
-                          hudState.baseHp > hudState.baseMaxHp * 0.35
-                            ? '#10b981'
-                            : '#ef4444',
-                        transform: `scaleX(${Math.max(
-                          0,
-                          Math.min(1, hudState.baseHp / hudState.baseMaxHp)
-                        )})`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="border-l border-slate-800 pl-3.5">
-                  <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                    Whole City Satellite Map
-                  </div>
-                  <div className="text-xs font-bold text-slate-100 truncate max-w-[165px]">
-                    {activeSector.name}
-                  </div>
-                  <div className="text-[11px] font-mono-tabular text-emerald-400 mt-0.5">
-                    {isOfflineMode ? 'OFFLINE VECTOR' : 'LIVE SATELLITE MAP'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Top-Center Cluster: Whole-Map Territory Control (Player vs. Zombie Area), Army Control & Economy */}
-              <div className="pointer-events-auto bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-2 shadow-xl flex items-center gap-4">
-                {/* Whole-Map Control Bar */}
-                <div>
-                  <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                    MAP CONTROL (GOAL: 100%)
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="font-display text-2xl font-bold font-mono-tabular text-emerald-400">
-                      {hudState.playerControlPercent}% PLAYER
-                    </span>
-                    <span className="text-xs font-mono-tabular text-rose-400 font-bold">
-                      · {hudState.zombieControlPercent}% ZOMBIE
+                    <span className="text-[10px] text-slate-400 hidden lg:inline">
+                      ({hudState.hqCount} HQ · GRID {hudState.activeTowerCount}/
+                      {hudState.maxTowerSlots} · CANNON {hqWeaponStats.damage}{' '}
+                      DMG)
                     </span>
                   </div>
-                  <div className="w-44 h-2 bg-rose-950 rounded-full overflow-hidden mt-1 border border-slate-800 flex">
+                  <div className="w-24 sm:w-36 h-1.5 bg-rose-950 rounded-full overflow-hidden border border-slate-800 mt-1">
                     <div
                       className="h-full bg-emerald-500 transition-all duration-200"
                       style={{ width: `${hudState.playerControlPercent}%` }}
                     />
                   </div>
                 </div>
+              </div>
 
-                {/* RTS Army Selection & Command Controls */}
-                <div className="border-l border-slate-800 pl-3.5">
-                  <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                    ARMY CONTROL ({hudState.soldierCount}S · {hudState.heavyVehicleCount}T)
-                  </div>
-                  <div className="flex items-center gap-1 mt-1">
-                    <button
-                      type="button"
-                      title="Select All Soldiers & Vehicles and enter Move/Attack Command mode"
-                      onClick={(e) => {
-                        e.currentTarget.blur();
-                        setSelectedDeployable('unit_command');
-                        setUnitSelectFilterSignal((prev) => ({
-                          filter: 'all',
-                          seq: (prev?.seq || 0) + 1,
-                        }));
-                      }}
-                      className={`px-2 py-1 rounded text-[10px] font-mono-tabular font-bold border transition-colors ${
-                        selectedDeployable === 'unit_command'
-                          ? 'bg-emerald-500 text-slate-950 border-emerald-400'
-                          : 'bg-emerald-950/90 text-emerald-300 border-emerald-700 hover:bg-emerald-900'
-                      }`}
-                    >
-                      ALL ({hudState.soldierCount + hudState.heavyVehicleCount})
-                    </button>
-                    <button
-                      type="button"
-                      title="Select Soldier Squads and click map to move"
-                      onClick={(e) => {
-                        e.currentTarget.blur();
-                        setSelectedDeployable('unit_command');
-                        setUnitSelectFilterSignal((prev) => ({
-                          filter: 'soldier',
-                          seq: (prev?.seq || 0) + 1,
-                        }));
-                      }}
-                      className="px-2 py-1 rounded text-[10px] font-mono-tabular font-bold bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-slate-700 transition-colors"
-                    >
-                      SOLDIERS ({hudState.soldierCount})
-                    </button>
-                    <button
-                      type="button"
-                      title="Select Heavy Siege Vehicles and click map to move"
-                      onClick={(e) => {
-                        e.currentTarget.blur();
-                        setSelectedDeployable('unit_command');
-                        setUnitSelectFilterSignal((prev) => ({
-                          filter: 'heavy_vehicle',
-                          seq: (prev?.seq || 0) + 1,
-                        }));
-                      }}
-                      className="px-2 py-1 rounded text-[10px] font-mono-tabular font-bold bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700 transition-colors"
-                    >
-                      VEHICLES ({hudState.heavyVehicleCount})
-                    </button>
-                  </div>
-                </div>
-
-                <div className="border-l border-slate-800 pl-3.5">
-                  <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                    {hudState.breathingTimeRemaining > 0
-                      ? 'BREATHING TIME · HQs'
-                      : '360° SWARM · HQs'}
-                  </div>
-                  <div className="font-display text-2xl font-bold font-mono-tabular text-slate-100 flex items-baseline gap-2">
-                    <span>W{hudState.wave}</span>
+              {/* Center: Wave / Breathing Timer & Scrap / Gems */}
+              <div className="flex items-center gap-2 sm:gap-4 font-mono-tabular shrink-0">
+                <div className="border-l border-slate-800 pl-2 sm:pl-3.5">
+                  <div className="text-[11px] sm:text-sm font-bold text-slate-100 leading-none whitespace-nowrap">
+                    W{hudState.wave}
                     {hudState.breathingTimeRemaining > 0 ? (
-                      <span className="text-xs font-mono-tabular text-emerald-400 font-bold">
-                        PEACE {hudState.breathingTimeRemaining}s
+                      <span className="text-emerald-400">
+                        {' '}
+                        · {hudState.breathingTimeRemaining}s
                       </span>
                     ) : (
-                      <span className="text-xs font-mono-tabular text-rose-400">
-                        {hudState.zombiesRemaining} ZOM
+                      <span className="text-rose-400">
+                        {' '}
+                        · {hudState.zombiesRemaining}Z
                       </span>
                     )}
-                    <span className="text-xs font-mono-tabular text-emerald-400">
-                      · {hudState.hqCount} HQ
-                    </span>
+                  </div>
+                  <div className="text-[11px] sm:text-xs font-bold text-amber-400 leading-tight whitespace-nowrap mt-0.5">
+                    {Math.round(scrap)} SCRAP
+                    {hudState.scrapPerSec > 0 && (
+                      <span className="text-[10px] text-yellow-300 hidden sm:inline">
+                        {' '}
+                        (+{hudState.scrapPerSec}/s)
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <div className="border-l border-slate-800 pl-3.5">
-                  <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                    BUILD GRID
+                <div className="hidden md:block border-l border-slate-800 pl-3.5">
+                  <div className="text-xs font-bold text-cyan-400 leading-none">
+                    {Math.round(gems)} GEMS
                   </div>
-                  <div className="font-display text-2xl font-bold font-mono-tabular text-sky-400">
-                    {hudState.activeTowerCount}/{hudState.maxTowerSlots}
-                  </div>
-                </div>
-
-                <div className="border-l border-slate-800 pl-3.5">
-                  <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                    SCRAP ECONOMY
-                  </div>
-                  <div className="font-display text-2xl font-bold font-mono-tabular text-amber-400 flex items-baseline gap-1.5">
-                    <span>{Math.round(scrap)}</span>
-                    <span className="text-xs font-mono-tabular text-yellow-300">
-                      +{hudState.scrapPerSec}/s
-                    </span>
-                  </div>
-                </div>
-
-                <div className="border-l border-slate-800 pl-3.5">
-                  <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                    BIO-GEMS
-                  </div>
-                  <div className="font-display text-2xl font-bold font-mono-tabular text-cyan-400">
-                    {Math.round(gems)}
+                  <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[140px]">
+                    {activeSector.name.split('(')[0].trim()}
                   </div>
                 </div>
               </div>
 
-              {/* Top-Right Cluster: Compact Utility Controls */}
-              <div className="pointer-events-auto flex items-center gap-2">
+              {/* Right: Android Action Icon Triggers */}
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
+                  aria-label="Choose Whole City Satellite Map"
                   onClick={(e) => {
                     e.currentTarget.blur();
                     setIsSectorModalOpen(true);
                   }}
-                  className="px-3 py-2.5 bg-slate-950/90 hover:bg-slate-900 border border-slate-800 text-slate-200 text-xs font-semibold rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                  className="min-w-[38px] sm:min-w-[44px] h-10 sm:h-11 px-2 flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold transition-colors"
                 >
-                  Map & Cache
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  >
+                    <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
+                    <line x1="9" y1="3" x2="9" y2="18" />
+                    <line x1="15" y1="6" x2="15" y2="21" />
+                  </svg>
+                  <span className="hidden xl:inline">City Map</span>
                 </button>
 
                 <button
                   type="button"
+                  aria-label="Open Defense Armory and Store"
                   onClick={(e) => {
                     e.currentTarget.blur();
                     setIsStoreModalOpen(true);
                   }}
-                  className="px-3 py-2.5 bg-slate-950/90 hover:bg-slate-900 border border-cyan-800/80 text-cyan-300 text-xs font-semibold rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                  className="min-w-[38px] sm:min-w-[44px] h-10 sm:h-11 px-2 flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-cyan-900/70 text-cyan-300 text-xs font-semibold transition-colors"
                 >
-                  Store & Upgrades
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" />
+                  </svg>
+                  <span className="hidden xl:inline">Armory</span>
                 </button>
 
                 <button
                   type="button"
+                  aria-label="Inspect Native Android Studio Kotlin Code"
                   onClick={(e) => {
                     e.currentTarget.blur();
-                    setIsFlutterModalOpen(true);
+                    setIsAndroidStudioModalOpen(true);
                   }}
-                  className="px-3 py-2.5 bg-slate-950/90 hover:bg-slate-900 border border-amber-700/80 text-amber-300 text-xs font-semibold rounded-xl shadow-lg transition-colors whitespace-nowrap shrink-0"
+                  className="min-w-[38px] sm:min-w-[44px] h-10 sm:h-11 px-2 flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-emerald-800/80 text-emerald-300 text-xs font-semibold transition-colors"
                 >
-                  Flutter Code
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  >
+                    <polyline points="16 18 22 12 16 6" />
+                    <polyline points="8 6 2 12 8 18" />
+                  </svg>
+                  <span className="hidden xl:inline">Android APK</span>
                 </button>
 
-                {/* Mute */}
                 <button
                   type="button"
-                  tabIndex={-1}
                   aria-label={muted ? 'Unmute Audio' : 'Mute Audio'}
                   onClick={(e) => {
                     e.currentTarget.blur();
@@ -778,21 +744,27 @@ export default function App() {
                       return next;
                     });
                   }}
-                  className="w-9 h-9 flex items-center justify-center bg-slate-950/90 hover:bg-slate-900 border border-slate-800 rounded-xl text-slate-200 shadow-lg transition-colors"
+                  className="hidden sm:flex min-w-[44px] h-11 items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 transition-colors"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  >
                     {muted ? (
                       <path d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6" />
                     ) : (
-                      <path d="M11 5L6 9H2v6h4l5 4V5zM19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                      <path d="M11 5L6 9H2v6h4l5 4V5zM19.07 4.93a10 10 0 0 1 0 14.14" />
                     )}
                   </svg>
                 </button>
 
-                {/* Pause [P] */}
                 <button
                   type="button"
-                  tabIndex={-1}
                   aria-label="Pause Game"
                   onClick={(e) => {
                     e.currentTarget.blur();
@@ -800,60 +772,193 @@ export default function App() {
                       prev === 'playing' ? 'paused' : 'playing'
                     );
                   }}
-                  className="w-9 h-9 flex items-center justify-center bg-slate-950/90 hover:bg-slate-900 border border-slate-800 rounded-xl text-slate-200 shadow-lg transition-colors"
+                  className="min-w-[38px] sm:min-w-[44px] h-10 sm:h-11 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 transition-colors"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  >
                     <rect x="6" y="4" width="4" height="16" />
                     <rect x="14" y="4" width="4" height="16" />
-                  </svg>
-                </button>
-
-                {/* Restart [R] */}
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-label="Restart Sector Defense"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    handleRestartGame();
-                  }}
-                  className="w-9 h-9 flex items-center justify-center bg-slate-950/90 hover:bg-slate-900 border border-slate-800 rounded-xl text-slate-200 shadow-lg transition-colors"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
                   </svg>
                 </button>
               </div>
             </div>
 
-            {/* Live Territorial / Tactical Alert Banner */}
+            {/* Live Tactical Alert Toast */}
             {hudState.statusAlert && (
-              <div className="mx-auto pointer-events-none bg-slate-950/95 border border-amber-500/80 text-amber-300 px-4 py-1.5 rounded-lg text-xs font-mono-tabular font-bold tracking-wide shadow-lg">
+              <div className="mx-auto max-w-[92vw] pointer-events-none bg-slate-950/95 border border-amber-500/80 text-amber-300 px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-mono-tabular font-bold tracking-wide text-center shadow-lg">
                 {hudState.statusAlert}
               </div>
             )}
 
-            {/* Bottom Categorized Command Dock (DEFENSIVE · ECONOMY · MILITARY · UNITS) */}
-            <div className="flex items-end justify-between gap-3">
-              <div className="pointer-events-auto bg-slate-950/95 border border-slate-800 rounded-xl p-2 shadow-2xl flex flex-col gap-1.5 max-w-full">
-                {/* Category Tabs Row */}
-                <div className="flex items-center gap-1.5 border-b border-slate-800/90 pb-1.5">
+            {/* Bottom Android Thumb-Zone Command Stack */}
+            <div className="flex flex-col gap-1.5 w-full max-w-4xl mx-auto">
+              {/* Contextual Slide-Up Building Inspector Bar */}
+              {hudState.selectedTower && selectedTowerStats && (
+                <div className="pointer-events-auto bg-slate-950/95 border border-amber-500/70 rounded-2xl px-3 py-2 shadow-2xl flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-slate-100 truncate">
+                      {
+                        DEPLOYABLE_BLUEPRINTS[hudState.selectedTower.blueprintId]
+                          .name
+                      }{' '}
+                      <span className="text-amber-400 font-mono-tabular">
+                        LVL {hudState.selectedTower.level}
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-mono-tabular text-slate-300">
+                      HP {Math.round(hudState.selectedTower.hp)}/
+                      {hudState.selectedTower.maxHp}
+                      {hudState.selectedTower.blueprintId ===
+                      'scrap_collector' ? (
+                        <span className="text-emerald-400">
+                          {' '}
+                          · +
+                          {getScrapCollectorYieldPerSecond(
+                            hudState.selectedTower.level,
+                            upgrades
+                          )}{' '}
+                          Scrap/s
+                        </span>
+                      ) : (
+                        <span> · {selectedTowerStats.damage} DMG</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      disabled={
+                        hudState.selectedTower.level >= 5 ||
+                        scrap < selectedTowerStats.upgradeCostScrap
+                      }
+                      onClick={() => setUpgradeTowerSignal((n) => n + 1)}
+                      className={`min-h-[44px] px-3 py-1.5 rounded-xl text-xs font-bold font-mono-tabular transition-colors ${
+                        hudState.selectedTower.level < 5 &&
+                        scrap >= selectedTowerStats.upgradeCostScrap
+                          ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                          : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      {hudState.selectedTower.level >= 5
+                        ? 'MAX LVL'
+                        : `Upgrade (${selectedTowerStats.upgradeCostScrap})`}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRepairTowerSignal((n) => n + 1)}
+                      className="min-h-[44px] px-3 py-1.5 rounded-xl bg-emerald-900/90 hover:bg-emerald-800 border border-emerald-700 text-emerald-200 text-xs font-bold transition-colors"
+                    >
+                      Repair
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSellTowerSignal((n) => n + 1)}
+                      className="min-h-[44px] px-3 py-1.5 rounded-xl bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-200 text-xs font-bold transition-colors"
+                    >
+                      Salvage
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label="Close Building Inspector"
+                      onClick={() => setDeselectTowerSignal((n) => n + 1)}
+                      className="min-h-[44px] px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Android Single-Finger Touch Mode Switcher + Call Wave Bar */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="pointer-events-auto inline-flex items-center p-1 bg-slate-950/95 border border-slate-800 rounded-2xl shadow-xl gap-1">
+                  <button
+                    type="button"
+                    data-testid="touch-mode-build"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      triggerAndroidHaptic('tap');
+                      setTouchActionMode('build');
+                      if (selectedDeployable === 'unit_command') {
+                        setSelectedDeployable('rotary_turret');
+                      }
+                    }}
+                    className={`min-h-[44px] px-3 sm:px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
+                      touchActionMode === 'build'
+                        ? 'bg-amber-500 text-slate-950 shadow'
+                        : 'text-slate-300 hover:bg-slate-900'
+                    }`}
+                  >
+                    Build Off-Road
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="touch-mode-move"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      triggerAndroidHaptic('tap');
+                      setTouchActionMode('move_units');
+                      setUnitSelectFilterSignal((prev) => ({
+                        filter: 'all',
+                        seq: (prev?.seq || 0) + 1,
+                      }));
+                    }}
+                    className={`min-h-[44px] px-3 sm:px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
+                      touchActionMode === 'move_units'
+                        ? 'bg-emerald-500 text-slate-950 shadow'
+                        : 'text-emerald-300 hover:bg-slate-900'
+                    }`}
+                  >
+                    Move Units ({totalArmyUnits})
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    triggerAndroidHaptic('tap');
+                    setNextWaveSignal((n) => n + 1);
+                  }}
+                  className="pointer-events-auto min-h-[44px] px-3.5 py-2 bg-slate-950/95 hover:bg-slate-900 border border-rose-800/80 text-rose-300 font-mono-tabular text-xs font-bold rounded-2xl shadow-xl transition-colors whitespace-nowrap shrink-0"
+                >
+                  Call Wave +25
+                </button>
+              </div>
+
+              {/* 4-Tab Material 3 Tactical Command Sheet */}
+              <div className="pointer-events-auto bg-slate-950/95 border border-slate-800 rounded-2xl p-2 shadow-2xl flex flex-col gap-1.5">
+                {/* 4 Categorized Tabs */}
+                <div className="grid grid-cols-4 gap-1 border-b border-slate-800/90 pb-1.5">
                   <button
                     type="button"
                     data-testid="tab-defensive"
                     onClick={(e) => {
                       e.currentTarget.blur();
+                      triggerAndroidHaptic('tap');
                       setActiveDockTab('defensive');
                       setSelectedDeployable('rotary_turret');
+                      setTouchActionMode('build');
                     }}
-                    className={`px-3 py-1 rounded-md text-[11px] font-display font-bold tracking-wider uppercase transition-colors ${
+                    className={`min-h-[44px] px-2 rounded-xl text-[11px] sm:text-xs font-display font-bold tracking-wide uppercase transition-colors truncate ${
                       activeDockTab === 'defensive'
-                        ? 'bg-sky-500 text-slate-950 shadow'
-                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+                        ? 'bg-sky-500 text-slate-950'
+                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
-                    1. Defensive (4)
+                    1. Defense
                   </button>
 
                   <button
@@ -861,16 +966,18 @@ export default function App() {
                     data-testid="tab-economy"
                     onClick={(e) => {
                       e.currentTarget.blur();
+                      triggerAndroidHaptic('tap');
                       setActiveDockTab('economy');
                       setSelectedDeployable('scrap_collector');
+                      setTouchActionMode('build');
                     }}
-                    className={`px-3 py-1 rounded-md text-[11px] font-display font-bold tracking-wider uppercase transition-colors ${
+                    className={`min-h-[44px] px-2 rounded-xl text-[11px] sm:text-xs font-display font-bold tracking-wide uppercase transition-colors truncate ${
                       activeDockTab === 'economy'
-                        ? 'bg-amber-500 text-slate-950 shadow'
-                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+                        ? 'bg-amber-500 text-slate-950'
+                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
-                    2. Economy & HQ Zones (2)
+                    2. Economy
                   </button>
 
                   <button
@@ -878,16 +985,18 @@ export default function App() {
                     data-testid="tab-military"
                     onClick={(e) => {
                       e.currentTarget.blur();
+                      triggerAndroidHaptic('tap');
                       setActiveDockTab('military');
                       setSelectedDeployable('infantry_barracks');
+                      setTouchActionMode('build');
                     }}
-                    className={`px-3 py-1 rounded-md text-[11px] font-display font-bold tracking-wider uppercase transition-colors ${
+                    className={`min-h-[44px] px-2 rounded-xl text-[11px] sm:text-xs font-display font-bold tracking-wide uppercase transition-colors truncate ${
                       activeDockTab === 'military'
-                        ? 'bg-emerald-500 text-slate-950 shadow'
-                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
-                    3. Military Buildings (3)
+                    3. Military
                   </button>
 
                   <button
@@ -895,24 +1004,22 @@ export default function App() {
                     data-testid="tab-units"
                     onClick={(e) => {
                       e.currentTarget.blur();
+                      triggerAndroidHaptic('tap');
                       setActiveDockTab('units');
                     }}
-                    className={`px-3 py-1 rounded-md text-[11px] font-display font-bold tracking-wider uppercase transition-colors flex items-center gap-1.5 ${
+                    className={`min-h-[44px] px-2 rounded-xl text-[11px] sm:text-xs font-display font-bold tracking-wide uppercase transition-colors truncate ${
                       activeDockTab === 'units'
-                        ? 'bg-cyan-400 text-slate-950 shadow'
-                        : 'bg-slate-900 text-cyan-300 hover:bg-slate-800 border border-cyan-800/60'
+                        ? 'bg-cyan-400 text-slate-950'
+                        : 'bg-slate-900 text-cyan-300 hover:bg-slate-800'
                     }`}
                   >
-                    <span>4. Units & Army</span>
-                    <span className="px-1.5 py-0.2 rounded bg-slate-950/60 text-[10px] font-mono-tabular">
-                      {hudState.soldierCount + hudState.heavyVehicleCount}
-                    </span>
+                    4. Units ({totalArmyUnits})
                   </button>
                 </div>
 
-                {/* Active Tab Content Row */}
+                {/* Horizontal Touch Cards */}
                 {activeDockTab !== 'units' ? (
-                  <div className="flex items-center gap-1.5 overflow-x-auto">
+                  <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
                     {deployableList
                       .filter((bp) => {
                         if (activeDockTab === 'defensive') {
@@ -936,7 +1043,9 @@ export default function App() {
                         );
                       })
                       .map((bp) => {
-                        const isSelected = selectedDeployable === bp.id;
+                        const isSelected =
+                          selectedDeployable === bp.id &&
+                          touchActionMode === 'build';
                         const activeCount =
                           hudState.unitCountsByType?.[bp.id] || 0;
                         const flatCost = getDynamicDeployCost(
@@ -955,9 +1064,11 @@ export default function App() {
                             type="button"
                             onClick={(e) => {
                               e.currentTarget.blur();
+                              triggerAndroidHaptic('tap');
                               setSelectedDeployable(bp.id);
+                              setTouchActionMode('build');
                             }}
-                            className={`px-3 py-1.5 rounded-lg border text-left transition-all flex items-center gap-2.5 shrink-0 ${
+                            className={`min-h-[54px] px-3 py-1.5 rounded-xl border text-left transition-all flex items-center gap-2.5 shrink-0 ${
                               isSelected
                                 ? 'bg-slate-800 border-amber-500 shadow-md'
                                 : 'bg-slate-900/90 border-slate-800 hover:border-slate-700'
@@ -968,13 +1079,14 @@ export default function App() {
                               height="24"
                               viewBox="0 0 28 28"
                               className="shrink-0"
+                              aria-hidden="true"
                             >
                               <rect
                                 x="2"
                                 y="2"
                                 width="24"
                                 height="24"
-                                rx="4"
+                                rx="5"
                                 fill="#090d16"
                                 stroke={bp.color}
                                 strokeWidth="2"
@@ -982,7 +1094,8 @@ export default function App() {
                               {bp.category === 'tower' && (
                                 <circle cx="14" cy="14" r="5" fill={bp.color} />
                               )}
-                              {bp.category === 'fortress' && (
+                              {(bp.category === 'fortress' ||
+                                bp.category === 'hq') && (
                                 <rect
                                   x="7"
                                   y="7"
@@ -997,30 +1110,19 @@ export default function App() {
                                   fill={bp.color}
                                 />
                               )}
-                              {bp.category === 'producer' &&
-                                bp.id === 'infantry_barracks' && (
-                                  <polygon
-                                    points="14,6 21,20 7,20"
-                                    fill={bp.color}
-                                  />
-                                )}
-                              {bp.category === 'producer' &&
-                                bp.id === 'vehicle_factory' && (
-                                  <rect
-                                    x="6"
-                                    y="9"
-                                    width="16"
-                                    height="10"
-                                    rx="2"
-                                    fill={bp.color}
-                                  />
-                                )}
-                              {bp.category === 'hq' && (
+                              {bp.id === 'infantry_barracks' && (
+                                <polygon
+                                  points="14,6 21,20 7,20"
+                                  fill={bp.color}
+                                />
+                              )}
+                              {bp.id === 'vehicle_factory' && (
                                 <rect
                                   x="6"
-                                  y="6"
+                                  y="9"
                                   width="16"
-                                  height="16"
+                                  height="10"
+                                  rx="2"
                                   fill={bp.color}
                                 />
                               )}
@@ -1036,33 +1138,21 @@ export default function App() {
                             <div>
                               <div className="flex items-center gap-1.5">
                                 <span className="text-xs font-bold text-slate-100 whitespace-nowrap">
-                                  [{bp.keyBinding}] {bp.name}
+                                  {bp.name}
                                 </span>
-                                <span
-                                  className={`text-xs font-mono-tabular font-bold ${
-                                    affordable
-                                      ? 'text-amber-400'
-                                      : 'text-rose-400'
-                                  }`}
-                                >
-                                  {isGridFull
-                                    ? 'GRID FULL'
-                                    : `${flatCost} SCRAP`}
-                                </span>
+                                {activeCount > 0 && (
+                                  <span className="text-[10px] font-mono-tabular text-emerald-400 font-bold">
+                                    ×{activeCount}
+                                  </span>
+                                )}
                               </div>
-                              <div className="text-[10px] text-slate-400 whitespace-nowrap">
-                                {bp.id === 'forward_hq'
-                                  ? 'ONLY HQs Gain Square Map Zones + HQ Cannon'
-                                  : bp.id === 'fortress'
-                                  ? 'Square Defense Bastion (680 HP · Dual Cannons)'
-                                  : bp.id === 'infantry_barracks'
-                                  ? 'Unlocks Rifle Soldiers in [4. Units] Tab'
-                                  : bp.id === 'vehicle_factory'
-                                  ? 'Unlocks Heavy Siege Tanks in [4. Units] Tab'
-                                  : bp.roleClue}
-                                {activeCount > 0
-                                  ? ` · ${activeCount} BUILT`
-                                  : ''}
+                              <div className="flex items-center gap-1.5 text-[11px] font-mono-tabular">
+                                <span className="text-amber-400 font-bold">
+                                  {flatCost} Scrap
+                                </span>
+                                <span className="text-slate-400 hidden sm:inline">
+                                  · {bp.roleClue}
+                                </span>
                               </div>
                             </div>
                           </button>
@@ -1070,416 +1160,230 @@ export default function App() {
                       })}
                   </div>
                 ) : (
-                  /* 4. UNITS & ARMY RECRUITMENT TAB (Unlocked when Barracks / Vehicle Factory is built) */
-                  <div className="flex items-center gap-2 overflow-x-auto">
-                    {(['soldier', 'heavy_vehicle'] as const).map((unitType) => {
-                      const unitBp = TRAINABLE_UNITS[unitType];
-                      const status = canTrainUnit(
-                        unitType,
-                        scrap,
-                        hudState.unitCountsByType
-                      );
-                      const activeUnitCount =
-                        unitType === 'soldier'
-                          ? hudState.soldierCount
-                          : hudState.heavyVehicleCount;
-
-                      return (
-                        <button
-                          key={unitType}
-                          type="button"
-                          data-testid={`train-${unitType}`}
-                          disabled={!status.allowed}
-                          onClick={(e) => {
-                            e.currentTarget.blur();
-                            setTrainUnitSignal((prev) => ({
-                              unitType,
-                              seq: (prev?.seq || 0) + 1,
-                            }));
-                          }}
-                          className={`px-3 py-1.5 rounded-lg border text-left transition-all flex items-center gap-2.5 shrink-0 ${
-                            status.allowed
-                              ? 'bg-slate-900 hover:bg-slate-800 border-emerald-500/80 shadow-md cursor-pointer'
-                              : 'bg-slate-950/90 border-slate-800 opacity-65 cursor-not-allowed'
-                          }`}
-                        >
-                          <svg
-                            width="24"
-                            height="24"
-                            viewBox="0 0 28 28"
-                            className="shrink-0"
-                          >
-                            <rect
-                              x="2"
-                              y="2"
-                              width="24"
-                              height="24"
-                              rx="4"
-                              fill="#090d16"
-                              stroke={
-                                status.unlocked
-                                  ? unitType === 'soldier'
-                                    ? '#10b981'
-                                    : '#06b6d4'
-                                  : '#475569'
-                              }
-                              strokeWidth="2"
-                            />
-                            {unitType === 'soldier' ? (
-                              <polygon
-                                points="14,6 21,20 7,20"
-                                fill={status.unlocked ? '#10b981' : '#475569'}
-                              />
-                            ) : (
-                              <rect
-                                x="6"
-                                y="9"
-                                width="16"
-                                height="10"
-                                rx="2"
-                                fill={status.unlocked ? '#06b6d4' : '#475569'}
-                              />
-                            )}
-                          </svg>
-
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-bold text-slate-100 whitespace-nowrap">
-                                Train {unitBp.name}
-                              </span>
-                              <span
-                                className={`text-xs font-mono-tabular font-bold ${
-                                  !status.unlocked
-                                    ? 'text-rose-400'
-                                    : status.allowed
-                                    ? 'text-amber-400'
-                                    : 'text-rose-400'
-                                }`}
-                              >
-                                {!status.unlocked
-                                  ? 'LOCKED'
-                                  : `${unitBp.costScrap} SCRAP`}
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-slate-400 whitespace-nowrap">
-                              {!status.unlocked
-                                ? `Requires ${unitBp.requiredBuildingName} (Military Tab)`
-                                : `${unitBp.roleClue} · ${activeUnitCount} ACTIVE`}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-
-                    {/* [M] Command Army Move/Attack Tool */}
+                  <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+                    {/* Train Rifle Soldier Squad */}
                     <button
                       type="button"
-                      data-testid="command-army-btn"
+                      data-testid="train-soldier-btn"
+                      disabled={!soldierTrainCheck.allowed}
                       onClick={(e) => {
                         e.currentTarget.blur();
-                        setSelectedDeployable('unit_command');
-                        setUnitSelectFilterSignal((prev) => ({
-                          filter: 'all',
+                        setTrainUnitSignal((prev) => ({
+                          unitType: 'soldier',
                           seq: (prev?.seq || 0) + 1,
                         }));
                       }}
-                      className={`px-3 py-1.5 rounded-lg border text-left transition-all flex items-center gap-2 shrink-0 ${
-                        selectedDeployable === 'unit_command'
-                          ? 'bg-emerald-950 border-emerald-400 shadow-md'
-                          : 'bg-slate-900/90 border-slate-800 hover:border-slate-700'
+                      className={`min-h-[54px] px-3.5 py-1.5 rounded-xl border text-left transition-colors shrink-0 ${
+                        soldierTrainCheck.allowed
+                          ? 'bg-emerald-950/90 hover:bg-emerald-900 border-emerald-500 text-slate-100'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 opacity-75 cursor-not-allowed'
                       }`}
                     >
-                      <div>
-                        <div className="text-xs font-bold text-emerald-300 whitespace-nowrap">
-                          [M] Command Army ({hudState.soldierCount + hudState.heavyVehicleCount} Active)
-                        </div>
-                        <div className="text-[10px] text-slate-400 whitespace-nowrap">
-                          Click or Right-Click Map to Move Soldiers & Tanks
-                        </div>
+                      <div className="text-xs font-bold text-emerald-300 whitespace-nowrap">
+                        Train {TRAINABLE_UNITS.soldier.name} (
+                        {hudState.soldierCount})
+                      </div>
+                      <div className="text-[11px] font-mono-tabular text-amber-400">
+                        {soldierTrainCheck.unlocked
+                          ? `${TRAINABLE_UNITS.soldier.costScrap} Scrap · Exits onto Road`
+                          : 'Locked — Build Infantry Barracks'}
                       </div>
                     </button>
+
+                    {/* Train Heavy Siege Tank */}
+                    <button
+                      type="button"
+                      data-testid="train-tank-btn"
+                      disabled={!tankTrainCheck.allowed}
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        setTrainUnitSignal((prev) => ({
+                          unitType: 'heavy_vehicle',
+                          seq: (prev?.seq || 0) + 1,
+                        }));
+                      }}
+                      className={`min-h-[54px] px-3.5 py-1.5 rounded-xl border text-left transition-colors shrink-0 ${
+                        tankTrainCheck.allowed
+                          ? 'bg-cyan-950/90 hover:bg-cyan-900 border-cyan-500 text-slate-100'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 opacity-75 cursor-not-allowed'
+                      }`}
+                    >
+                      <div className="text-xs font-bold text-cyan-300 whitespace-nowrap">
+                        Train {TRAINABLE_UNITS.heavy_vehicle.name} (
+                        {hudState.heavyVehicleCount})
+                      </div>
+                      <div className="text-[11px] font-mono-tabular text-amber-400">
+                        {tankTrainCheck.unlocked
+                          ? `${TRAINABLE_UNITS.heavy_vehicle.costScrap} Scrap · Exits onto Road`
+                          : 'Locked — Build Vehicle Factory'}
+                      </div>
+                    </button>
+
+                    {/* Quick Road Rally Quadrant Shortcuts */}
+                    {(['fortress_nw', 'fortress_ne', 'fortress_se', 'fortress_sw'] as const).map(
+                      (zid, i) => {
+                        const labels = ['NW Road', 'NE Road', 'SE Road', 'SW Road'];
+                        return (
+                          <button
+                            key={zid}
+                            type="button"
+                            onClick={(e) => {
+                              e.currentTarget.blur();
+                              setTouchActionMode('move_units');
+                              setFocusZoneSignal((prev) => ({
+                                zoneId: zid,
+                                seq: (prev?.seq || 0) + 1,
+                              }));
+                            }}
+                            className="min-h-[54px] px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-mono-tabular font-bold text-slate-200 whitespace-nowrap shrink-0"
+                          >
+                            Send {labels[i]}
+                          </button>
+                        );
+                      }
+                    )}
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
 
-              {/* Selected Building Inspector OR Wave Trigger Card */}
-              {hudState.selectedTower && selectedTowerStats ? (
-                <div className="pointer-events-auto bg-slate-950/95 border border-slate-800 rounded-xl px-3.5 py-2 shadow-2xl flex items-center gap-3 shrink-0">
-                  <div>
-                    <div className="text-xs font-bold text-slate-100">
-                      {
-                        DEPLOYABLE_BLUEPRINTS[
-                          hudState.selectedTower.blueprintId
-                        ].name
-                      }{' '}
-                      · LVL {hudState.selectedTower.level} ·{' '}
-                      <span
-                        className={
-                          hudState.selectedTower.hp <
-                          hudState.selectedTower.maxHp * 0.45
-                            ? 'text-rose-400'
-                            : 'text-emerald-400'
-                        }
-                      >
-                        {Math.round(hudState.selectedTower.hp)}/
-                        {hudState.selectedTower.maxHp} HP
-                      </span>
-                    </div>
-                    <div className="text-[10px] font-mono-tabular text-slate-400">
-                      {hudState.selectedTower.blueprintId === 'scrap_collector'
-                        ? `INCOME +${getScrapCollectorYieldPerSecond(
-                            hudState.selectedTower.level,
-                            upgrades
-                          )} SCRAP/SEC`
-                        : hudState.selectedTower.blueprintId === 'forward_hq'
-                        ? `SQUARE PLAYER HQ ZONE · CANNON ${selectedTowerStats.damage} DMG`
-                        : hudState.selectedTower.blueprintId === 'fortress'
-                        ? `SQUARE FORTRESS BASTION · DUAL CANNONS ${selectedTowerStats.damage} DMG`
-                        : hudState.selectedTower.blueprintId ===
-                          'infantry_barracks'
-                        ? `UNLOCKS SOLDIERS IN [UNITS] TAB · SELF-DEFENSE ${Math.round(
-                            selectedTowerStats.damage * 0.45
-                          )} DMG`
-                        : hudState.selectedTower.blueprintId ===
-                          'vehicle_factory'
-                        ? `UNLOCKS SIEGE TANKS IN [UNITS] TAB (${selectedTowerStats.damage} DMG)`
-                        : `DMG ${selectedTowerStats.damage} · RNG ${
-                            selectedTowerStats.range
-                          }m`}
-                    </div>
+        {/* ==================== PAUSED ANDROID SHEET ==================== */}
+        {gameState === 'paused' &&
+          !isSectorModalOpen &&
+          !isStoreModalOpen &&
+          !isAndroidStudioModalOpen && (
+            <div
+              className="fixed inset-0 z-40 flex items-center justify-center p-4"
+              style={{ backgroundColor: 'rgba(9, 13, 22, 0.86)' }}
+              role="dialog"
+              aria-label="Game Paused"
+            >
+              <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4">
+                <div>
+                  <div className="text-xs font-mono-tabular text-amber-400 uppercase font-bold">
+                    Android Tactical Pause
                   </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {(hudState.selectedTower.hp < hudState.selectedTower.maxHp ||
-                      hudState.selectedTower.overheated ||
-                      hudState.selectedTower.heat >= 0.25) && (
-                      <button
-                        type="button"
-                        onClick={() => setRepairTowerSignal((n) => n + 1)}
-                        className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-slate-950 transition-colors whitespace-nowrap shrink-0"
-                      >
-                        Repair (
-                        {Math.max(
-                          25,
-                          Math.round(
-                            Math.max(
-                              0.25,
-                              1 -
-                                hudState.selectedTower.hp /
-                                  hudState.selectedTower.maxHp
-                            ) * 75
-                          )
-                        )}{' '}
-                        Scrap)
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      disabled={
-                        hudState.selectedTower.level >= 5 ||
-                        scrap < selectedTowerStats.upgradeCostScrap
-                      }
-                      onClick={() => setUpgradeTowerSignal((n) => n + 1)}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
-                        hudState.selectedTower.level < 5 &&
-                        scrap >= selectedTowerStats.upgradeCostScrap
-                          ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
-                          : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                      }`}
-                    >
-                      {hudState.selectedTower.level >= 5
-                        ? 'Max Level'
-                        : `Upgrade (${selectedTowerStats.upgradeCostScrap} Scrap)`}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setSellTowerSignal((n) => n + 1)}
-                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-800 transition-colors whitespace-nowrap shrink-0"
-                    >
-                      Salvage
-                    </button>
-                  </div>
+                  <h2 className="font-display text-3xl font-bold text-slate-100 uppercase mt-0.5">
+                    Sector Defense Paused
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Wave {hudState.wave} · {hudState.playerControlPercent}% City
+                    Controlled · {hudState.hqCount} Active HQ
+                  </p>
                 </div>
-              ) : (
-                <div className="pointer-events-auto bg-slate-950/95 border border-slate-800 rounded-xl px-3.5 py-2 shadow-2xl flex items-center gap-2.5 shrink-0">
-                  {hudState.breathingTimeRemaining > 0 && (
-                    <div className="text-right">
-                      <div className="text-[10px] font-mono-tabular uppercase text-emerald-400 font-bold">
-                        BREATHING TIME
-                      </div>
-                      <div className="text-xs font-mono-tabular font-bold text-slate-200">
-                        Next Attack in {hudState.breathingTimeRemaining}s
-                      </div>
-                    </div>
-                  )}
+
+                <div className="flex flex-col gap-2.5">
                   <button
                     type="button"
-                    onClick={() => setNextWaveSignal((n) => n + 1)}
-                    className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg transition-colors whitespace-nowrap shrink-0"
+                    onClick={() => setGameState('playing')}
+                    className="min-h-[46px] w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm rounded-xl transition-colors"
                   >
-                    Call Next Wave Early
+                    Resume Battle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRestartGame}
+                    className="min-h-[46px] w-full bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold text-xs rounded-xl transition-colors"
+                  >
+                    Restart City Defense
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAndroidStudioModalOpen(true)}
+                    className="min-h-[46px] w-full bg-slate-950 hover:bg-slate-800 border border-emerald-800 text-emerald-300 font-semibold text-xs rounded-xl transition-colors"
+                  >
+                    Inspect Android Studio Kotlin Code
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGameState('title')}
+                    className="min-h-[46px] w-full bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-semibold text-xs rounded-xl transition-colors"
+                  >
+                    Exit to Launch Screen
                   </button>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ==================== PAUSE MODAL ==================== */}
-        {gameState === 'paused' && (
-          <div
-            className="fixed inset-0 z-40 flex items-center justify-center p-4"
-            style={{ backgroundColor: 'rgba(9, 13, 22, 0.86)' }}
-            role="dialog"
-            aria-label="Tactical Operations Paused"
-          >
-            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
-              <h2 className="font-display text-3xl font-bold uppercase text-slate-100">
-                Tactical Operations Paused
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Sector: {activeSector.name} ({activeSector.city})
-              </p>
-
-              <div className="grid grid-cols-3 gap-3 my-5">
-                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase">
-                    Map Control
-                  </div>
-                  <div className="font-display text-2xl font-bold font-mono-tabular text-emerald-400">
-                    {hudState.playerControlPercent}%
-                  </div>
-                </div>
-                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase">
-                    HQ HP
-                  </div>
-                  <div className="font-display text-2xl font-bold font-mono-tabular text-emerald-400">
-                    {hudState.baseHp}
-                  </div>
-                </div>
-                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase">
-                    Scrap
-                  </div>
-                  <div className="font-display text-2xl font-bold font-mono-tabular text-amber-400">
-                    {Math.round(scrap)}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setGameState('playing')}
-                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-colors"
-                >
-                  Resume Defense
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRestartGame}
-                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-lg transition-colors"
-                >
-                  Restart Sector Wave 1
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGameState('title')}
-                  className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 text-slate-400 font-semibold text-xs rounded-lg border border-slate-800 transition-colors"
-                >
-                  Return to Title Screen
-                </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ==================== VICTORY / GAME OVER MODAL ==================== */}
+        {/* ==================== GAME OVER / VICTORY DEBRIEF ==================== */}
         {gameState === 'gameover' && runSnapshot && (
           <div
             className="fixed inset-0 z-40 flex items-center justify-center p-4"
             style={{ backgroundColor: 'rgba(9, 13, 22, 0.90)' }}
             role="dialog"
             aria-label={
-              runSnapshot.victory
-                ? 'Full Map Liberation Victory'
-                : 'HQ Overrun Defeat'
+              runSnapshot.victory ? 'City Liberated Victory' : 'HQ Overrun'
             }
           >
-            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
-              <div className="text-xs font-mono-tabular uppercase text-amber-400">
-                {runSnapshot.sectorName}
+            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-5">
+              <div>
+                <div
+                  className={`text-xs font-mono-tabular font-bold uppercase ${
+                    runSnapshot.victory ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  {runSnapshot.victory
+                    ? '100% Whole-City Satellite Liberation'
+                    : 'Primary HQ Command Overrun'}
+                </div>
+                <h2 className="font-display text-3xl font-bold text-slate-100 uppercase mt-1">
+                  {runSnapshot.victory
+                    ? `${runSnapshot.sectorName} Secured`
+                    : 'Sector Defense Fallen'}
+                </h2>
               </div>
-              <h2 className="font-display text-4xl font-bold uppercase text-slate-100 mt-0.5">
-                {runSnapshot.victory
-                  ? '100% Map Liberated: Victory'
-                  : 'Command Base Overrun'}
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                {runSnapshot.victory
-                  ? 'Your Forward HQs, Fortresses, Soldiers, and Heavy Vehicles eradicated the Zombie-Controlled Area across the entire city.'
-                  : 'The 360° zombie swarm breached the Primary HQ perimeter.'}
-              </p>
 
-              <div className="grid grid-cols-3 gap-3 my-5">
-                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase">
-                    Map Control
-                  </div>
-                  <div className="font-display text-2xl font-bold font-mono-tabular text-emerald-400">
-                    {runSnapshot.mapControlPercent ?? 100}%
+              <div className="grid grid-cols-2 gap-3 bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono-tabular text-xs">
+                <div>
+                  <div className="text-slate-400">Wave Reached</div>
+                  <div className="text-lg font-bold text-slate-100">
+                    Wave {runSnapshot.waveReached}
                   </div>
                 </div>
-                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase">
-                    Hostiles Killed
+                <div>
+                  <div className="text-slate-400">City Control</div>
+                  <div className="text-lg font-bold text-emerald-400">
+                    {runSnapshot.mapControlPercent}% ({runSnapshot.hqCount} HQ)
                   </div>
-                  <div className="font-display text-2xl font-bold font-mono-tabular text-rose-400">
+                </div>
+                <div>
+                  <div className="text-slate-400">Zombies Cleared</div>
+                  <div className="text-lg font-bold text-amber-400">
                     {runSnapshot.zombiesEliminated}
                   </div>
                 </div>
-                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <div className="text-[10px] text-slate-400 uppercase">
-                    Score / Best
-                  </div>
-                  <div className="font-display text-xl font-bold font-mono-tabular text-amber-400">
-                    {runSnapshot.score} / {runSnapshot.bestScore}
+                <div>
+                  <div className="text-slate-400">Best Wave</div>
+                  <div className="text-lg font-bold text-cyan-400">
+                    Wave {runSnapshot.bestWave}
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2.5">
+              <div className="flex flex-col sm:flex-row gap-2.5">
                 <button
                   type="button"
-                  data-start="true"
                   onClick={handleRestartGame}
-                  className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-colors"
+                  className="min-h-[46px] flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm rounded-xl transition-colors"
                 >
-                  {runSnapshot.victory ? 'Play Again' : 'Try Again'}
+                  Play Again
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsStoreModalOpen(true)}
-                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold text-xs rounded-lg transition-colors"
+                  className="min-h-[46px] flex-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold text-xs rounded-xl transition-colors"
                 >
-                  Upgrade Defenses in Armory
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGameState('title')}
-                  className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 text-slate-400 font-semibold text-xs rounded-lg border border-slate-800 transition-colors"
-                >
-                  Return to Title Screen
+                  Upgrade Armory
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Modals */}
+        {/* Modals & Sheets */}
         <SectorMapModal
           isOpen={isSectorModalOpen}
           onClose={() => setIsSectorModalOpen(false)}
@@ -1487,7 +1391,10 @@ export default function App() {
           activeSector={activeSector}
           isOfflineMode={isOfflineMode}
           onToggleOfflineMode={() => setIsOfflineMode((prev) => !prev)}
-          onSelectSector={handleSelectSector}
+          onSelectSector={(sec) => {
+            handleSelectSector(sec);
+            setIsSectorModalOpen(false);
+          }}
           onCacheSector={handleCacheSector}
         />
 
@@ -1501,11 +1408,11 @@ export default function App() {
           onPurchaseUpgrade={handlePurchaseUpgrade}
         />
 
-        <FlutterCodeModal
-          isOpen={isFlutterModalOpen}
-          onClose={() => setIsFlutterModalOpen(false)}
+        <AndroidStudioModal
+          isOpen={isAndroidStudioModalOpen}
+          onClose={() => setIsAndroidStudioModalOpen(false)}
         />
       </div>
-    </div>
+    </main>
   );
 }

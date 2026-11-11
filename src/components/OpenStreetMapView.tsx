@@ -139,12 +139,10 @@ class SatelliteCityCanvasGridLayer extends L.GridLayer {
       ctx.fillStyle = 'rgba(148, 163, 184, 0.42)';
       ctx.fillText(`SAT ${coords.z}/${coords.x}/${coords.y}`, 8, 248);
 
-      // 2. Load real Esri World Imagery Satellite Tile + Hybrid Road Labels
-      // Note: Esri World Imagery uses /tile/{z}/{y}/{x} order
+      // 2. Load real Esri World Imagery Satellite Tile + Clean Esri Satellite Reference Labels
+      // Note: Esri MapServer uses /tile/{z}/{y}/{x} order and requires zero API keys
       const esriSatelliteUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${coords.z}/${coords.y}/${coords.x}`;
-      const subdomains = ['a', 'b', 'c', 'd'];
-      const sub = subdomains[Math.abs(coords.x + coords.y) % subdomains.length];
-      const hybridLabelsUrl = `https://${sub}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/${coords.z}/${coords.x}/${coords.y}.png`;
+      const esriReferenceLabelsUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/${coords.z}/${coords.y}/${coords.x}`;
 
       const paintSatelliteTile = (satImg: HTMLImageElement) => {
         ctx.save();
@@ -152,15 +150,11 @@ class SatelliteCityCanvasGridLayer extends L.GridLayer {
         ctx.drawImage(satImg, 0, 0, 256, 256);
         ctx.restore();
 
-        // Overlay street & district labels on top of the satellite imagery
         const labelImg = new Image();
         labelImg.onload = () => {
-          ctx.save();
-          ctx.filter = 'invert(95%) contrast(125%)';
           ctx.drawImage(labelImg, 0, 0, 256, 256);
-          ctx.restore();
         };
-        labelImg.src = hybridLabelsUrl;
+        labelImg.src = esriReferenceLabelsUrl;
       };
 
       const satImg = new Image();

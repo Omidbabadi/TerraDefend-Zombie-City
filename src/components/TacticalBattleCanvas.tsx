@@ -35,6 +35,7 @@ import {
   validateTowerPlacement,
 } from '../game/rules';
 import { soundEngine } from '../game/audio';
+import { triggerAndroidHaptic } from '../game/haptics';
 
 export interface HudSyncPayload {
   baseHp: number;
@@ -91,6 +92,8 @@ interface TacticalBattleCanvasProps {
   upgradeTowerSignal: number;
   repairTowerSignal: number;
   sellTowerSignal: number;
+  deselectTowerSignal?: number;
+  touchActionMode?: 'build' | 'move_units';
 }
 
 const MAX_PARTICLES = 180;
@@ -117,9 +120,17 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
   upgradeTowerSignal,
   repairTowerSignal,
   sellTowerSignal,
+  deselectTowerSignal = 0,
+  touchActionMode = 'build',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const touchDownRef = useRef<{
+    x: number;
+    y: number;
+    longPressed: boolean;
+  } | null>(null);
 
   // Store latest React props in refs synchronously so 60Hz loop and pointer handlers always read latest state immediately
   const propsRef = useRef({
@@ -127,6 +138,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     activeSector,
     isOfflineMode,
     selectedDeployable,
+    touchActionMode,
     scrap,
     upgrades,
     onSpendScrap,
@@ -140,6 +152,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     activeSector,
     isOfflineMode,
     selectedDeployable,
+    touchActionMode,
     scrap,
     upgrades,
     onSpendScrap,
@@ -493,6 +506,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     });
 
     soundEngine.playDeploy();
+    triggerAndroidHaptic('deploy');
     spawnParticles(
       spawnOriginX * 1000,
       spawnOriginY * 650,
@@ -500,7 +514,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       isVehicle ? '#06b6d4' : '#10b981',
       95
     );
-    sim.statusAlert = `${TRAINABLE_UNITS[unitType].name.toUpperCase()} EXITED BUILDING ONTO REAL ROAD! RIGHT-CLICK OR USE [M] TO MOVE ON ROADS`;
+    sim.statusAlert = `${TRAINABLE_UNITS[unitType].name.toUpperCase()} EXITED BUILDING ONTO REAL ROAD! TAP [MOVE UNITS] OR LONG-PRESS MAP`;
     sim.statusAlertTimer = 3.4;
     propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
   }, [trainUnitSignal]);
@@ -707,7 +721,15 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     sim.selectedTowerId = null;
     propsRef.current.onEarnScrapAndGems(refund, 0, 0);
     soundEngine.playDeploy();
+    triggerAndroidHaptic('tap');
   }, [sellTowerSignal]);
+
+  // Deselect currently inspected building (used by Android touch sheet 'Done' button)
+  useEffect(() => {
+    if (deselectTowerSignal === 0) return;
+    simRef.current.selectedTowerId = null;
+    propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
+  }, [deselectTowerSignal]);
 
   // Issue Move / Attack-Move command to selected Soldiers & Heavy Vehicles strictly along REAL ROADS
   const orderUnitsToMapCoordinate = (
@@ -758,6 +780,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     )}%)`;
     sim.statusAlertTimer = 2.8;
     soundEngine.playDeploy();
+    triggerAndroidHaptic('command');
     spawnParticles(clickX, clickY, 12, '#34d399', 85);
     propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
   };
@@ -1788,11 +1811,28 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       }
 
       // 3. Render Zombie-Controlled Area Warning Labels in outer uncaptured quadrants
+      const isCompactCanvas = width < 580;
       const outerQuadrants = [
-        { label: 'NW ZOMBIE-CONTROLLED AREA', x: 0.18, y: 0.18 },
-        { label: 'NE ZOMBIE-CONTROLLED AREA', x: 0.82, y: 0.18 },
-        { label: 'SE ZOMBIE-CONTROLLED AREA', x: 0.82, y: 0.78 },
-        { label: 'SW ZOMBIE-CONTROLLED AREA', x: 0.18, y: 0.78 },
+        {
+          label: isCompactCanvas ? 'NW ZOMBIE ZONE' : 'NW ZOMBIE-CONTROLLED AREA',
+          x: 0.18,
+          y: 0.18,
+        },
+        {
+          label: isCompactCanvas ? 'NE ZOMBIE ZONE' : 'NE ZOMBIE-CONTROLLED AREA',
+          x: 0.82,
+          y: 0.18,
+        },
+        {
+          label: isCompactCanvas ? 'SE ZOMBIE ZONE' : 'SE ZOMBIE-CONTROLLED AREA',
+          x: 0.82,
+          y: 0.78,
+        },
+        {
+          label: isCompactCanvas ? 'SW ZOMBIE ZONE' : 'SW ZOMBIE-CONTROLLED AREA',
+          x: 0.18,
+          y: 0.78,
+        },
       ];
       for (const q of outerQuadrants) {
         const isControlled = territoryCircles.some(
@@ -1800,18 +1840,21 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
             Math.max(Math.abs(q.x - c.x), Math.abs(q.y - c.y)) <= c.radius * 0.9
         );
         if (!isControlled) {
+          const clampedX = Math.max(72, Math.min(width - 72, q.x * width));
           ctx.save();
           ctx.font = 'bold 10px "JetBrains Mono", monospace';
           ctx.textAlign = 'center';
           ctx.fillStyle = 'rgba(252, 165, 165, 0.85)';
-          ctx.fillText(q.label, q.x * width, q.y * height);
-          ctx.font = '9px "JetBrains Mono", monospace';
-          ctx.fillStyle = 'rgba(248, 113, 113, 0.72)';
-          ctx.fillText(
-            'BUILD FORWARD HQ [8] IN ECONOMY TAB TO CAPTURE ZONE',
-            q.x * width,
-            q.y * height + 13
-          );
+          ctx.fillText(q.label, clampedX, q.y * height);
+          if (!isCompactCanvas) {
+            ctx.font = '9px "JetBrains Mono", monospace';
+            ctx.fillStyle = 'rgba(248, 113, 113, 0.72)';
+            ctx.fillText(
+              'BUILD FORWARD HQ IN ECONOMY TAB TO CAPTURE ZONE',
+              clampedX,
+              q.y * height + 13
+            );
+          }
           ctx.restore();
         }
       }
@@ -2465,36 +2508,43 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     };
   }, []);
 
-  // Handle pointer click on tactical canvas (Left-Click builds or selects/moves units; Right-Click always orders units!)
-  const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (propsRef.current.gameState !== 'playing') return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
-    const normX = clickX / rect.width;
-    const normY = clickY / rect.height;
-
+  // Core primary-tap action (build off-road, inspect building/unit, or move units on roads)
+  const executePrimaryTapAction = (
+    clickX: number,
+    clickY: number,
+    rectWidth: number,
+    rectHeight: number,
+    shiftKey = false
+  ) => {
+    const normX = clickX / rectWidth;
+    const normY = clickY / rectHeight;
     const sim = simRef.current;
 
-    // Right-click (button === 2) ALWAYS commands selected Soldiers & Heavy Vehicles to move/attack!
-    if (e.button === 2) {
-      e.preventDefault();
+    // Android Touch 'move_units' mode OR [M] Command Army blueprint immediately orders units along real roads!
+    const bp = DEPLOYABLE_BLUEPRINTS[propsRef.current.selectedDeployable];
+    if (
+      propsRef.current.touchActionMode === 'move_units' ||
+      bp?.category === 'command'
+    ) {
       orderUnitsToMapCoordinate(normX, normY, clickX, clickY);
       return;
     }
 
-    // 1. Check if clicking directly on a Soldier or Heavy Vehicle to select it
+    // 1. Tap directly on a Soldier or Heavy Vehicle to select it (generous 26px Android touch radius)
     for (const u of sim.troops) {
       const distUnitPx = Math.hypot(
-        u.x * rect.width - clickX,
-        u.y * rect.height - clickY
+        u.x * rectWidth - clickX,
+        u.y * rectHeight - clickY
       );
-      if (distUnitPx <= 22) {
-        if (!e.shiftKey) {
+      if (distUnitPx <= 26) {
+        if (!shiftKey) {
           for (const other of sim.troops) {
             other.selected = other.id === u.id;
           }
@@ -2503,41 +2553,35 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
         }
         sim.statusAlert = `${
           u.unitType === 'heavy_vehicle' ? 'HEAVY SIEGE TANK' : 'SOLDIER SQUAD'
-        } SELECTED — RIGHT-CLICK OR USE [M] COMMAND ARMY TO MOVE`;
+        } SELECTED — TAP [MOVE UNITS] OR LONG-PRESS MAP TO MOVE ON ROADS`;
         sim.statusAlertTimer = 3.0;
         soundEngine.playDeploy();
+        triggerAndroidHaptic('tap');
         propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
         return;
       }
     }
 
-    // 2. Check if clicking an existing building to inspect/upgrade/repair
+    // 2. Tap an existing building to inspect/upgrade/repair (generous 28px Android touch radius)
     for (const t of sim.towers) {
       const distPx = Math.hypot(
-        t.x * rect.width - clickX,
-        t.y * rect.height - clickY
+        t.x * rectWidth - clickX,
+        t.y * rectHeight - clickY
       );
-      if (distPx <= 24) {
+      if (distPx <= 28) {
         sim.selectedTowerId = t.id;
+        triggerAndroidHaptic('tap');
         propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
         return;
       }
     }
 
     sim.selectedTowerId = null;
-
-    const bp = DEPLOYABLE_BLUEPRINTS[propsRef.current.selectedDeployable];
     if (!bp) return;
-
-    // 3. If in [M] Command Army mode, left-clicking anywhere on the map moves selected Soldiers & Heavy Vehicles!
-    if (bp.category === 'command') {
-      orderUnitsToMapCoordinate(normX, normY, clickX, clickY);
-      return;
-    }
 
     const deployCost = getDynamicDeployCost(bp.id);
 
-    // 4. Validate Player-Controlled Area & Road Clearance for static buildings
+    // 3. Validate Player-Controlled Square Area & Off-Road Clearance for static buildings
     if (bp.category !== 'ability') {
       const mapCtrl = calculateMapControlPercentage(
         sim.towers,
@@ -2560,6 +2604,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       if (!check.valid) {
         sim.statusAlert = check.reason || 'PLACEMENT BLOCKED';
         sim.statusAlertTimer = 2.8;
+        triggerAndroidHaptic('error');
         spawnParticles(clickX, clickY, 8, '#ef4444', 70);
         propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
         return;
@@ -2569,6 +2614,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     if (propsRef.current.scrap < deployCost) {
       sim.statusAlert = `INSUFFICIENT SCRAP: NEED ${deployCost} SCRAP`;
       sim.statusAlertTimer = 2.2;
+      triggerAndroidHaptic('error');
       spawnParticles(clickX, clickY, 6, '#ef4444', 55);
       propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
       return;
@@ -2579,6 +2625,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     if (bp.category === 'ability') {
       // Orbital Napalm Airstrike
       soundEngine.playHeavyExplosion();
+      triggerAndroidHaptic('explosion');
       sim.cameraTrauma = Math.min(1, sim.cameraTrauma + 0.7);
       spawnParticles(clickX, clickY, 36, '#ef4444', 180);
       spawnParticles(clickX, clickY, 20, '#f59e0b', 130);
@@ -2586,8 +2633,8 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       for (const z of sim.zombies) {
         if (z.koTimer > 0) continue;
         const d = Math.hypot(
-          z.x * rect.width - clickX,
-          z.y * rect.height - clickY
+          z.x * rectWidth - clickX,
+          z.y * rectHeight - clickY
         );
         if (d <= bp.range) {
           z.hp -= bp.damage;
@@ -2612,8 +2659,9 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
         }
       }
     } else {
-      // Deploy Static Building (Defensive Tower, Heavy Fortress, Scrap Refinery, Barracks, Vehicle Factory, or Forward HQ Base)
+      // Deploy Static Off-Road Building
       soundEngine.playDeploy();
+      triggerAndroidHaptic('deploy');
       spawnParticles(clickX, clickY, 16, bp.color, 100);
       const eff = getEffectiveTowerStats(
         bp.id,
@@ -2642,7 +2690,7 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
         kills: 0,
       };
       sim.towers.push(newTower);
-      sim.selectedTowerId = newTower.id;
+      sim.selectedTowerId = null;
 
       if (bp.id === 'forward_hq') {
         const ctrl = calculateMapControlPercentage(sim.towers, sim.baseHp > 0);
@@ -2657,17 +2705,88 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
     propsRef.current.onHudSync(buildHudPayload(propsRef.current.upgrades));
   };
 
+  // Handle pointer down:
+  // - Right-click (mouse) immediately commands units on roads
+  // - Mouse left-click acts immediately
+  // - Android Touch ('touch' / 'pen') supports BOTH Quick-Tap (build/move) AND 420ms Long-Press (road move command + vibration)!
+  const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (propsRef.current.gameState !== 'playing') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const normX = clickX / rect.width;
+    const normY = clickY / rect.height;
+
+    if (e.button === 2) {
+      e.preventDefault();
+      orderUnitsToMapCoordinate(normX, normY, clickX, clickY);
+      return;
+    }
+
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+      clearLongPressTimer();
+      touchDownRef.current = { x: clickX, y: clickY, longPressed: false };
+      simRef.current.hoverX = clickX;
+      simRef.current.hoverY = clickY;
+
+      longPressTimerRef.current = window.setTimeout(() => {
+        if (touchDownRef.current) {
+          touchDownRef.current.longPressed = true;
+          orderUnitsToMapCoordinate(normX, normY, clickX, clickY);
+        }
+      }, 420);
+      return;
+    }
+
+    executePrimaryTapAction(clickX, clickY, rect.width, rect.height, e.shiftKey);
+  };
+
+  const handleCanvasPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+    clearLongPressTimer();
+    const down = touchDownRef.current;
+    touchDownRef.current = null;
+    if (!down || down.longPressed) return;
+
+    if (propsRef.current.gameState !== 'playing') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const upX = e.clientX - rect.left;
+    const upY = e.clientY - rect.top;
+    if (Math.hypot(upX - down.x, upY - down.y) <= 18) {
+      executePrimaryTapAction(upX, upY, rect.width, rect.height, false);
+    }
+  };
+
   const handleCanvasPointerMove = (
     e: React.PointerEvent<HTMLCanvasElement>
   ) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    simRef.current.hoverX = e.clientX - rect.left;
-    simRef.current.hoverY = e.clientY - rect.top;
+    const moveX = e.clientX - rect.left;
+    const moveY = e.clientY - rect.top;
+    simRef.current.hoverX = moveX;
+    simRef.current.hoverY = moveY;
+
+    if (
+      touchDownRef.current &&
+      Math.hypot(moveX - touchDownRef.current.x, moveY - touchDownRef.current.y) > 18
+    ) {
+      clearLongPressTimer();
+    }
   };
 
   const handleCanvasPointerLeave = () => {
+    clearLongPressTimer();
+    touchDownRef.current = null;
     simRef.current.hoverX = -1000;
     simRef.current.hoverY = -1000;
   };
@@ -2678,10 +2797,12 @@ export const TacticalBattleCanvas: React.FC<TacticalBattleCanvasProps> = ({
       data-testid="tactical-battle-canvas"
       aria-label="Tactical City Sector Defense Canvas"
       onPointerDown={handleCanvasPointerDown}
+      onPointerUp={handleCanvasPointerUp}
+      onPointerCancel={handleCanvasPointerLeave}
       onPointerMove={handleCanvasPointerMove}
       onPointerLeave={handleCanvasPointerLeave}
       onContextMenu={(e) => e.preventDefault()}
-      className="absolute inset-0 w-full h-full cursor-crosshair z-10"
+      className="absolute inset-0 w-full h-full cursor-crosshair z-10 touch-none"
     />
   );
 };

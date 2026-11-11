@@ -310,51 +310,80 @@ test('PRESET_CITY_SECTORS and buildProceduralSectorFromCoords contain real GPS s
   assert.equal(typeof sector.cachedAt, 'number');
 });
 
-test('Flutter Clean Architecture project contains all 20 layered source files on disk', async () => {
+test('Native Android Studio (Kotlin + Jetpack Compose) project contains all 19 Clean Architecture files and PWA assets on disk', async () => {
   const fs = await import('node:fs');
-  const expectedFiles = [
-    'flutter_project/pubspec.yaml',
-    'flutter_project/lib/main.dart',
-    'flutter_project/lib/injection_container.dart',
-    'flutter_project/lib/core/error/failures.dart',
-    'flutter_project/lib/core/usecases/usecase.dart',
-    'flutter_project/lib/domain/entities/city_sector_entity.dart',
-    'flutter_project/lib/domain/entities/defense_entities.dart',
-    'flutter_project/lib/domain/entities/store_entities.dart',
-    'flutter_project/lib/domain/repositories/map_sector_repository.dart',
-    'flutter_project/lib/domain/repositories/economy_repository.dart',
-    'flutter_project/lib/domain/usecases/map_sector_usecases.dart',
-    'flutter_project/lib/domain/usecases/tactical_defense_usecases.dart',
-    'flutter_project/lib/data/models/city_sector_model.dart',
-    'flutter_project/lib/data/datasources/local_offline_cache_datasource.dart',
-    'flutter_project/lib/data/repositories/map_sector_repository_impl.dart',
-    'flutter_project/lib/data/repositories/economy_repository_impl.dart',
-    'flutter_project/lib/presentation/bloc/tactical_defense_cubit.dart',
-    'flutter_project/lib/presentation/pages/tactical_defense_page.dart',
-    'flutter_project/lib/presentation/widgets/tactical_overlay_painter.dart',
-    'flutter_project/lib/presentation/widgets/store_bottom_sheet.dart',
+  const expectedAndroidFiles = [
+    'android_game/settings.gradle.kts',
+    'android_game/build.gradle.kts',
+    'android_game/app/build.gradle.kts',
+    'android_game/app/src/main/AndroidManifest.xml',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/SectorZeroApp.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/MainActivity.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/di/AppContainer.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/domain/model/CitySectorModels.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/domain/model/DefenseEntities.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/domain/model/EconomyModels.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/domain/repository/GameRepositories.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/domain/usecase/RoadNetworkPathfinder.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/domain/usecase/WaveScalingEngine.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/data/local/OfflineSectorDataSource.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/data/repository/GameRepositoriesImpl.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/presentation/viewmodel/AndroidGameViewModel.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/presentation/ui/SatelliteMapComposable.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/presentation/ui/TacticalBattleCanvas.kt',
+    'android_game/app/src/main/java/com/sectorzero/citydefense/presentation/ui/AndroidGameScreen.kt',
   ];
-  for (const file of expectedFiles) {
-    assert.equal(fs.existsSync(file), true, `Missing ${file}`);
+
+  for (const file of expectedAndroidFiles) {
+    assert.equal(fs.existsSync(file), true, `Missing Android file ${file}`);
     const content = fs.readFileSync(file, 'utf8');
     assert.equal(content.length > 100, true, `Empty or truncated ${file}`);
   }
 
-  // Verify Flutter Clean Architecture files include Satellite Map tiles, 4 Dock Tabs, Square Zones, and Real-Road Pathing
-  const pageDart = fs.readFileSync(
-    'flutter_project/lib/presentation/pages/tactical_defense_page.dart',
-    'utf8'
-  );
-  assert.equal(pageDart.includes('World_Imagery/MapServer/tile'), true);
-  assert.equal(pageDart.includes('1. DEFENSIVE'), true);
-  assert.equal(pageDart.includes('4. UNITS & ARMY'), true);
+  // Verify obsolete Flutter project was removed during Android rebuild
+  assert.equal(fs.existsSync('flutter_project'), false);
 
-  const usecasesDart = fs.readFileSync(
-    'flutter_project/lib/domain/usecases/tactical_defense_usecases.dart',
+  // Verify Android Satellite Map, 4 Dock Tabs, Immersive Game Manifest, and Real-Road Pathfinding
+  const manifestXml = fs.readFileSync(
+    'android_game/app/src/main/AndroidManifest.xml',
     'utf8'
   );
-  assert.equal(usecasesDart.includes('computeRoadNetworkPath'), true);
-  assert.equal(usecasesDart.includes('projectPointToNearestRoad'), true);
+  assert.equal(manifestXml.includes('android.intent.category.GAME'), true);
+  assert.equal(manifestXml.includes('android.permission.VIBRATE'), true);
+
+  const satelliteKt = fs.readFileSync(
+    'android_game/app/src/main/java/com/sectorzero/citydefense/presentation/ui/SatelliteMapComposable.kt',
+    'utf8'
+  );
+  assert.equal(satelliteKt.includes('World_Imagery/MapServer/tile'), true);
+
+  const entitiesKt = fs.readFileSync(
+    'android_game/app/src/main/java/com/sectorzero/citydefense/domain/model/DefenseEntities.kt',
+    'utf8'
+  );
+  assert.equal(entitiesKt.includes('1. Defense'), true);
+  assert.equal(entitiesKt.includes('4. Units & Army'), true);
+
+  const pathfinderKt = fs.readFileSync(
+    'android_game/app/src/main/java/com/sectorzero/citydefense/domain/usecase/RoadNetworkPathfinder.kt',
+    'utf8'
+  );
+  assert.equal(pathfinderKt.includes('computeRoadNetworkPath'), true);
+  assert.equal(pathfinderKt.includes('projectPointToNearestRoad'), true);
+  assert.equal(pathfinderKt.includes('validateOffRoadBuildingPlacement'), true);
+
+  // Verify Android PWA / WebAPK icons exist
+  const pwaAssets = [
+    'public/icon.svg',
+    'public/pwa-192x192.png',
+    'public/pwa-512x512.png',
+    'public/pwa-maskable-512x512.png',
+    'public/apple-touch-icon.png',
+  ];
+  for (const asset of pwaAssets) {
+    assert.equal(fs.existsSync(asset), true, `Missing PWA asset ${asset}`);
+    assert.equal(fs.statSync(asset).size > 100, true, `Empty PWA asset ${asset}`);
+  }
 });
 
 test('projectPointToNearestRoad and computeRoadNetworkPath route newly built units from off-road buildings onto real roads', async () => {

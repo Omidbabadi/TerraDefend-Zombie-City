@@ -28,49 +28,49 @@ export const StoreArmoryModal: React.FC<StoreArmoryModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center p-4"
+      className="fixed inset-0 z-40 flex items-end sm:items-center justify-center sm:p-4"
       style={{ backgroundColor: 'rgba(9, 13, 22, 0.88)', pointerEvents: 'auto' }}
       role="dialog"
       aria-label="Defense Armory & Virtual Currency Store"
     >
-      <div className="w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[86vh]">
+      <div className="w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-slate-800 bg-slate-950">
           <div>
-            <h2 className="font-display text-2xl font-bold tracking-wide text-slate-100 uppercase">
-              Defense Armory & Virtual Currency Store
+            <h2 className="font-display text-xl sm:text-2xl font-bold tracking-wide text-slate-100 uppercase">
+              Defense Armory &amp; Virtual Currency Store
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
               Upgrade permanent sector defense technologies or claim virtual currency supply crates.
             </p>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3 text-sm font-mono-tabular bg-slate-900 border border-slate-800 px-3.5 py-1.5 rounded-lg">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 text-xs sm:text-sm font-mono-tabular bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl">
               <span className="text-amber-400 font-bold">SCRAP: {Math.round(scrap)}</span>
               <span aria-hidden="true" className="text-slate-600">·</span>
-              <span className="text-cyan-400 font-bold">BIO-GEMS: {Math.round(gems)}</span>
+              <span className="text-cyan-400 font-bold">GEMS: {Math.round(gems)}</span>
             </div>
             <button
               type="button"
               onClick={onClose}
               aria-label="Close Armory Store"
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className="min-h-[44px] px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition-colors whitespace-nowrap shrink-0"
             >
-              Close Store
+              Done
             </button>
           </div>
         </div>
 
         {/* Sub-nav Tabs */}
-        <div className="px-6 pt-4 pb-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800">
+        <div className="px-4 sm:px-6 pt-3 pb-2 bg-slate-900 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-xl border border-slate-800">
             <button
               type="button"
               onClick={() => setActiveTab('upgrades')}
-              className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`min-h-[40px] px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'upgrades'
-                  ? 'bg-amber-500 text-slate-950'
+                  ? 'bg-amber-500 text-slate-950 font-bold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -79,13 +79,13 @@ export const StoreArmoryModal: React.FC<StoreArmoryModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('currency')}
-              className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`min-h-[40px] px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === 'currency'
-                  ? 'bg-amber-500 text-slate-950'
+                  ? 'bg-amber-500 text-slate-950 font-bold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Virtual Currency & Supply Packs (3)
+              Supply Packs (3)
             </button>
           </div>
 
@@ -143,13 +143,13 @@ export const StoreArmoryModal: React.FC<StoreArmoryModalProps> = ({
                           onPurchaseUpgrade(u.id);
                           setPurchaseFeedback(`Upgraded ${u.name} to Level ${u.level + 1}`);
                         }}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                        className={`min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
                           canAfford
                             ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
                             : 'bg-slate-800 text-slate-500 cursor-not-allowed'
                         }`}
                       >
-                        {isMaxed ? 'Maxed' : `Upgrade ${u.name}`}
+                        {isMaxed ? 'Maxed' : `Upgrade`}
                       </button>
                     </div>
                   </div>
@@ -190,7 +190,7 @@ export const StoreArmoryModal: React.FC<StoreArmoryModalProps> = ({
                         `Claimed ${pack.name} (+${pack.gemsReward} Gems, +${pack.scrapReward} Scrap)`
                       );
                     }}
-                    className="w-full py-2.5 px-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-lg transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-[44px] w-full py-2.5 px-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl transition-colors whitespace-nowrap shrink-0"
                   >
                     Claim {pack.name}
                   </button>

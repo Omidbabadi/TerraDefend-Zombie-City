@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Network & Offline Tile Caching for Whole-City Satellite Maps & OSRM Real Roads -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Tactile Android Haptics for Base Building, Unit Orders & Explosions -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application
+        android:name=".SectorZeroApp"
+        android:allowBackup="true"
+        android:appCategory="game"
+        android:hardwareAccelerated="true"
+        android:label="Sector Zero: City Map Defense"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:exported="true"
+            android:screenOrientation="fullUser">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.GAME" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

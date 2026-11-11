@@ -143,27 +143,27 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center p-4"
+      className="fixed inset-0 z-40 flex items-end sm:items-center justify-center sm:p-4"
       style={{ backgroundColor: 'rgba(9, 13, 22, 0.88)', pointerEvents: 'auto' }}
       role="dialog"
       aria-label="Choose Whole City Satellite Map & Real-Road Network"
     >
-      <div className="w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
+      <div className="w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-slate-800 bg-slate-950">
           <div>
-            <h2 className="font-display text-2xl font-bold tracking-wide text-slate-100 uppercase">
+            <h2 className="font-display text-xl sm:text-2xl font-bold tracking-wide text-slate-100 uppercase">
               Choose Whole City (Satellite Map &amp; Real-Road Network)
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
               Start in your central Square HQ Zone and capture the whole city on Satellite Maps. Buildings place outside roads only; all Units &amp; Zombies strictly use real roads.
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onToggleOfflineMode}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 border ${
+              className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 border ${
                 isOfflineMode
                   ? 'bg-emerald-950/90 text-emerald-300 border-emerald-700'
                   : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
@@ -177,9 +177,9 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label="Close Sector Map Modal"
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className="min-h-[44px] px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition-colors whitespace-nowrap shrink-0"
             >
-              Return to City Defense
+              Done
             </button>
           </div>
         </div>
@@ -277,9 +277,9 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
                           setCameraCenter({ lat: sector.lat, lng: sector.lng });
                           setPreviewRoads(sector.roads);
                         }}
-                        className={`flex-1 py-1.5 px-3 rounded text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                        className={`min-h-[44px] flex-1 py-2 px-3 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                           isSelected
-                            ? 'bg-amber-500 text-slate-950'
+                            ? 'bg-amber-500 text-slate-950 font-bold'
                             : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
                         }`}
                       >
@@ -293,9 +293,9 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
                             `Offline real-road polyline package verified for ${sector.name}.`
                           );
                         }}
-                        className="py-1.5 px-3 rounded text-xs font-semibold bg-slate-900 border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+                        className="min-h-[44px] py-2 px-3 rounded-xl text-xs font-semibold bg-slate-900 border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
                       >
-                        {isCached ? 'Refresh Road Cache' : 'Cache Real Roads'}
+                        {isCached ? 'Refresh Cache' : 'Cache Roads'}
                       </button>
                     </div>
                   </div>
@@ -345,7 +345,7 @@ export const SectorMapModal: React.FC<SectorMapModalProps> = ({
                 type="button"
                 disabled={isTracingRealRoads}
                 onClick={handleTraceAndDeployRealRoads}
-                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-colors whitespace-nowrap shrink-0"
               >
                 {isTracingRealRoads
                   ? 'Tracing Real Streets via OSRM...'
